@@ -2,6 +2,7 @@
   "name": "ytptube-mcp",
   "version": "0.1.0",
   "description": "Model Context Protocol server for a self-hosted YTPTube instance",
+  "private": true,
   "type": "module",
   "bin": {
     "ytptube-mcp": "dist/index.js"

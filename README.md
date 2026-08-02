@@ -7,7 +7,7 @@ It is a Node.js TypeScript project; it is not published to npm. Run it from a ch
 ## Features
 
 | Tool group | Tools (each starts with `ytptube_`) | What it is for |
-| --- | --- |
+| --- | --- | --- |
 | Health and inspection | `ping`, `get_system_configuration`, `get_ytdlp_options`, `validate_cli_options`, `inspect_url`, `list_logs`, `live_queue` | Check API health and read service, queue, and downloader state. URL inspection accepts a URL plus optional preset, force, and entries fields; it does not accept raw yt-dlp arguments. |
 | Queue and history | `list_history`, `get_history_item`, `add_downloads`, `retry_history_item`, `queue_control`, `clear_history` | Inspect queued/completed items; add, retry, or manage queue entries and clear history when mutations are enabled. |
 | Archive and metadata | `list_archive`, `set_history_archive`, `generate_task_metadata`, `generate_history_nfo` | Search and inspect archive records, archive/unarchive entries, and generate metadata when mutations are enabled. |
@@ -52,6 +52,28 @@ Authentication is optional. If used, set **both** `YTPTUBE_USERNAME` and `YTPTUB
 ## Mutation safety
 
 `YTPTUBE_ALLOW_MUTATIONS=false` is the default. In this mode the server blocks every state-changing request **before it makes a network call**. Reading/inspection tools continue to work.
+
+For example, this MCP tool call remains available with mutations disabled:
+
+```json
+{
+  "name": "ytptube_ping",
+  "arguments": {}
+}
+```
+
+Conversely, this state-changing MCP tool call fails locally with `MUTATIONS_DISABLED` and makes no API request while mutations are disabled. It can proceed only when `YTPTUBE_ALLOW_MUTATIONS` is the exact string `true`:
+
+```json
+{
+  "name": "ytptube_add_downloads",
+  "arguments": {
+    "items": {
+      "url": "https://example.com/video"
+    }
+  }
+}
+```
 
 Set this value to the exact string `true` only when you intend to allow changes:
 
