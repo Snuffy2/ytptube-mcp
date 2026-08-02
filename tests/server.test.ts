@@ -398,7 +398,11 @@ describe("YTPTube MCP tools", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it.each(["ytptube_queue_control", "ytptube_generate_history_nfo"])(
+  it.each([
+    "ytptube_queue_control",
+    "ytptube_set_history_archive",
+    "ytptube_generate_history_nfo",
+  ])(
     "publishes %s as potentially destructive",
     async (name) => {
       const { client } = await harness(false);

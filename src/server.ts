@@ -173,7 +173,7 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   }, ({ preset, ids }) => call("/api/archiver", { query: { preset: String(preset), ids: Array.isArray(ids) ? ids.join(",") : undefined } }));
   register("ytptube_set_history_archive", "Archive or unarchive a history item using its configured archive file.", {
     id, archived: z.boolean(),
-  }, ({ id, archived }) => call(`/api/history/${pathId(id)}/archive`, { method: archived ? "POST" : "DELETE" }), true);
+  }, ({ id, archived }) => call(`/api/history/${pathId(id)}/archive`, { method: archived ? "POST" : "DELETE" }), true, true);
   register("ytptube_generate_task_metadata", "Generate task metadata, NFO, and image sidecar files.", { id: numericId }, ({ id }) => call(`/api/tasks/${pathId(id)}/metadata`, { method: "POST" }), true);
   register("ytptube_generate_history_nfo", "Generate an NFO sidecar for a completed history item.", {
     id, type: z.enum(["tv", "movie"]).default("tv"), overwrite: z.boolean().default(false),

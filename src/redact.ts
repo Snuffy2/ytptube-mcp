@@ -2,8 +2,8 @@ const SECRET_KEY_NAME = String.raw`(?:password|token|access[_-]?token|refresh[_-
 const SENSITIVE_KEY = /(?:cookie|password|token|secret|authorization|api[ _-]?key|credentials?|^auth$|^basic[_-]?auth$)/i;
 const APIKEY_QUERY = /([?&]apikey=)[^&#\s"'<>]*/gi;
 const HTTP_URL_USERINFO = /(\bhttps?:\/\/)[^/?#\s"'<>]+@/gi;
-const ESCAPED_SERIALIZED_SECRET = new RegExp(`((\\\\["'])${SECRET_KEY_NAME}\\2\\s*:\\s*(\\\\["']))(?:\\\\\\\\.|(?!\\3)[\\s\\S])*(\\3)`, "gi");
-const SERIALIZED_SECRET = new RegExp(`((["'])${SECRET_KEY_NAME}\\2\\s*:\\s*(["']))(?:\\\\.|(?!\\3)[\\s\\S])*(\\3)`, "gi");
+const ESCAPED_SERIALIZED_SECRET = new RegExp(`((\\\\["'])${SECRET_KEY_NAME}\\2\\s*:\\s*(\\\\["']))(?:\\\\\\\\[^]|(?!\\3)[^\\\\])*(\\3)`, "gi");
+const SERIALIZED_SECRET = new RegExp(`((["'])${SECRET_KEY_NAME}\\2\\s*:\\s*(["']))(?:\\\\[^]|(?!\\3)[^\\\\])*(\\3)`, "gi");
 const SECRET_ASSIGNMENT = new RegExp(`(\\b${SECRET_KEY_NAME}\\b\\s*[:=]\\s*)(?:"[^"]*"|'[^']*'|[^\\s,;&#"'<>}\\]]+)`, "gi");
 const ESCAPED_SERIALIZED_HEADER_START = /((\\["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(\\["']))/gi;
 const SERIALIZED_HEADER_START = /((["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(["']))/gi;
@@ -38,7 +38,10 @@ function redactSerializedHeaders(
       if (!escaped && output[end] === quote) break;
       end += 1;
     }
-    if (end >= output.length) continue;
+    if (end >= output.length) {
+      output = `${output.slice(0, startPattern.lastIndex)}[REDACTED]`;
+      break;
+    }
     const delimiterLength = escaped ? 2 : 1;
     output = `${output.slice(0, startPattern.lastIndex)}[REDACTED]${output.slice(end, end + delimiterLength)}${output.slice(end + delimiterLength)}`;
     startPattern.lastIndex += "[REDACTED]".length + delimiterLength;
@@ -65,16 +68,20 @@ function redactString(value: string): string {
 
 export function redact(value: unknown, seen = new WeakSet<object>()): unknown {
   if (typeof value === "string") return redactString(value);
-  if (Array.isArray(value)) return value.map((item) => redact(item, seen));
   if (value !== null && typeof value === "object") {
     if (seen.has(value)) return "[CIRCULAR]";
     seen.add(value);
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        SENSITIVE_KEY.test(key) ? "[REDACTED]" : redact(item, seen),
-      ]),
-    );
+    try {
+      if (Array.isArray(value)) return value.map((item) => redact(item, seen));
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [
+          key,
+          SENSITIVE_KEY.test(key) ? "[REDACTED]" : redact(item, seen),
+        ]),
+      );
+    } finally {
+      seen.delete(value);
+    }
   }
   return value;
 }

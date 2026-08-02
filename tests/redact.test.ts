@@ -3,6 +3,25 @@ import { describe, expect, it } from "vitest";
 import { redact } from "../src/redact.js";
 
 describe("redact", () => {
+  it("preserves shared children while still marking genuine cycles", () => {
+    const shared = { status: "safe" };
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+
+    expect(redact({ first: shared, second: shared, cyclic })).toEqual({
+      first: { status: "safe" },
+      second: { status: "safe" },
+      cyclic: { self: "[CIRCULAR]" },
+    });
+  });
+
+  it("marks a self-referencing array as circular", () => {
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic);
+
+    expect(redact(cyclic)).toEqual(["[CIRCULAR]"]);
+  });
+
   it("recursively redacts sensitive keys while preserving safe result data", () => {
     const result = redact({
       title: "safe title",
@@ -110,6 +129,24 @@ describe("redact", () => {
     expect(result).toContain('\\"status\\":\\"safe\\"');
     expect(result).toContain("before");
     expect(result).toContain("after");
+  });
+
+  it.each([
+    ['{"Authorization":"Basic unterminated-secret', '{"Authorization":"[REDACTED]'],
+    ['{"Proxy-Authorization":"Bearer unterminated-secret', '{"Proxy-Authorization":"[REDACTED]'],
+    ['{"X-API-Key":"unterminated-secret', '{"X-API-Key":"[REDACTED]'],
+    ['{"Cookie":"session=unterminated-secret', '{"Cookie":"[REDACTED]'],
+    ['{\\"Authorization\\":\\"Basic unterminated-secret', '{\\"Authorization\\":\\"[REDACTED]'],
+  ])("redacts an unterminated serialized header through the end", (diagnostic, expected) => {
+    expect(redact(diagnostic)).toBe(expected);
+  });
+
+  it("redacts a terminated backslash-rich serialized secret", () => {
+    const credential = `secret-value${"\\\\".repeat(2_000)}`;
+
+    expect(redact(`prefix {"token":"${credential}","status":"safe"}`)).toBe(
+      'prefix {"token":"[REDACTED]","status":"safe"}',
+    );
   });
 
   it("redacts authorization credentials for schemes other than Basic and Bearer", () => {
