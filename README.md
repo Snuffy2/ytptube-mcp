@@ -11,8 +11,8 @@ It is a Node.js TypeScript project; it is not published to npm. Run it from a ch
 | Health and inspection | `ping`, `get_system_configuration`, `get_ytdlp_options`, `validate_cli_options`, `inspect_url`, `list_logs`, `live_queue` | Check API health and read service, queue, and downloader state. |
 | Queue and history | `list_history`, `get_history_item`, `add_downloads`, `retry_history_item`, `queue_control`, `clear_history` | Inspect queued/completed items; add, retry, or manage queue entries and clear history when mutations are enabled. |
 | Archive and metadata | `list_archive`, `set_history_archive`, `generate_task_metadata`, `generate_history_nfo` | Search and inspect archive records, archive/unarchive entries, and generate metadata when mutations are enabled. |
-| Tasks | `list_tasks`, `get_task`, `inspect_task_url`, `create_tasks`, `patch_task`, `update_task` | Inspect scheduled tasks and submit task/per-download configuration. Task URL inspection is a preview only. |
-| Presets | `list_presets`, `get_preset`, `create_preset`, `patch_preset`, `update_preset` | Inspect presets and use them as per-download configuration when mutations are enabled. |
+| Tasks | `list_tasks`, `get_task`, `inspect_task_url`, `create_tasks`, `patch_task`, `update_task` | Inspect and manage scheduled work; a task may select a preset. Task URL inspection is a preview only. |
+| Presets | `list_presets`, `get_preset`, `create_preset`, `patch_preset`, `update_preset` | Inspect and manage reusable per-download authentication and settings when mutations are enabled. |
 
 ## Requirements
 
@@ -63,7 +63,7 @@ This gate covers adds and retries, queue actions, history clearing, archive muta
 
 - Task URL inspection is a preview; the ytptube API does not provide a scheduled-task “run now” endpoint.
 - Global yt-dlp options are available through the documented API as read-only data. This server does not write global options.
-- Set per-download configuration through task or preset inputs, rather than trying to change global configuration.
+- Per-download authentication and settings belong in preset inputs, not task create/update. A task can select a preset, but task create/update rejects `cookies` and arbitrary `config` fields.
 - File browser/streaming, terminal or system administration, global configuration writes, notifications, task/preset deletion, and SSE are intentionally outside this server’s scope.
 
 ## Codex configuration
