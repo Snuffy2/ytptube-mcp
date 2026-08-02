@@ -68,7 +68,3 @@ jobs:
 
       - name: Publish to npm
         run: npm publish
-        env:
-          # Used only to bootstrap the first publication. Thereafter npm prefers
-          # the OIDC trusted publisher authorized for this workflow.
-          # NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
