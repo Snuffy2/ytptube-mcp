@@ -255,13 +255,60 @@ describe("YTPTube MCP tools", () => {
   it("keeps mutation gating ahead of handler payload validation", async () => {
     const { client, request } = await harness(false);
 
-    const blocked = await client.callTool({
-      name: "ytptube_update_task",
-      arguments: { id: 7, task: { url: "not-a-url" } },
+    for (const [name, arguments_] of [
+      ["ytptube_add_downloads", { items: { url: "file:///etc/passwd" } }],
+      ["ytptube_create_tasks", { tasks: { name: "unsafe", url: "data:text/plain,secret" } }],
+      ["ytptube_patch_task", { id: 7, changes: { url: "ftp://video.test/file" } }],
+      ["ytptube_update_task", { id: 7, task: { url: "not-a-url" } }],
+    ] as const) {
+      const blocked = await client.callTool({ name, arguments: arguments_ });
+      expect(text(blocked), name).toContain("MUTATIONS_DISABLED");
+    }
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ytptube_inspect_url", { url: "file:///etc/passwd" }],
+    ["ytptube_inspect_task_url", { url: "data:text/plain,secret" }],
+  ])("rejects unsafe URL schemes for read-only tool %s", async (name, arguments_) => {
+    const { client, request } = await harness(false);
+
+    const response = await client.callTool({ name, arguments: arguments_ });
+
+    expect(response.isError).toBe(true);
+    expect(text(response)).toMatch(/http|https/i);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ytptube_add_downloads", { items: { url: "file:///etc/passwd" } }],
+    ["ytptube_create_tasks", { tasks: { name: "unsafe", url: "data:text/plain,secret" } }],
+    ["ytptube_patch_task", { id: 7, changes: { url: "ftp://video.test/file" } }],
+    ["ytptube_update_task", { id: 7, task: { name: "unsafe", url: "file:///etc/passwd" } }],
+  ])("rejects unsafe URL schemes for enabled mutation %s", async (name, arguments_) => {
+    const { client, request } = await harness(true);
+
+    const response = await client.callTool({ name, arguments: arguments_ });
+
+    expect(response.isError).toBe(true);
+    expect(text(response)).toMatch(/http|https/i);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("accepts HTTPS download URLs", async () => {
+    const { client, request } = await harness(true);
+    const item = { url: "https://video.test/watch/1" };
+
+    const response = await client.callTool({
+      name: "ytptube_add_downloads",
+      arguments: { items: item },
     });
 
-    expect(text(blocked)).toContain("MUTATIONS_DISABLED");
-    expect(request).not.toHaveBeenCalled();
+    expect(response.isError).not.toBe(true);
+    expect(request).toHaveBeenCalledWith("/api/history", {
+      method: "POST",
+      body: item,
+    });
   });
 
   it("redacts nested secrets from successful and structured-error result text", async () => {

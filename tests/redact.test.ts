@@ -91,4 +91,25 @@ describe("redact", () => {
       "Cookie=[REDACTED]\nrequest failed",
     );
   });
+
+  it.each([
+    ["password", "password-secret"],
+    ["token", "token-secret"],
+    ["access_token", "access-token-secret"],
+    ["secret", "generic-secret"],
+  ])("redacts %s assignments and serialized values in strings", (key, credential) => {
+    const result = redact([
+      `worker failed: ${key}=${credential} retry permitted`,
+      `backend response: {"${key}":"${credential}","status":"denied"}`,
+      `escaped response: {\\"${key}\\":\\"${credential}\\"} complete`,
+      `request URL: /api/logs?offset=0&${key}=${credential}&limit=5`,
+    ]);
+    const text = JSON.stringify(result);
+
+    expect(text).not.toContain(credential);
+    expect(text).toContain("retry permitted");
+    expect(text).toContain("status");
+    expect(text).toContain("complete");
+    expect(text).toContain("limit=5");
+  });
 });

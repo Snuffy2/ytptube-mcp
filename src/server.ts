@@ -14,8 +14,12 @@ const ids = z.array(z.string().min(1)).min(1);
 const page = z.number().int().min(1).optional();
 const perPage = z.number().int().min(1).max(200).optional();
 const arbitraryObject = z.record(z.unknown());
+const httpUrl = z.string().url().refine((value) => {
+  const protocol = new URL(value).protocol;
+  return protocol === "http:" || protocol === "https:";
+}, "URL must use http or https");
 const download = z.object({
-  url: z.string().url(),
+  url: httpUrl,
   preset: z.string().optional(),
   folder: z.string().optional(),
   cookies: z.string().optional(),
@@ -26,7 +30,7 @@ const download = z.object({
 });
 const taskFields = {
   name: z.string().trim().min(1),
-  url: z.string().url(),
+  url: httpUrl,
   timer: z.string().optional(),
   preset: z.string().optional(),
   folder: z.string().optional(),
@@ -112,7 +116,7 @@ export function createServer(config: Config, client = new YtptubeClient(config))
     args: z.string(),
   }, ({ args }) => call("/api/yt-dlp/convert", { method: "POST", body: { args } }));
   register("ytptube_inspect_url", "Inspect URL metadata without adding it to the download queue.", {
-    url: z.string().url(), preset: z.string().optional(), force: z.boolean().optional(), args: z.string().optional(), entries: z.boolean().optional(),
+    url: httpUrl, preset: z.string().optional(), force: z.boolean().optional(), args: z.string().optional(), entries: z.boolean().optional(),
   }, (input) => call("/api/yt-dlp/url/info", { query: input as RequestOptions["query"] }));
   register("ytptube_list_logs", "Read recent YTPTube application logs (when file logging is enabled).", {
     offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(150).optional(),
@@ -126,8 +130,12 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_get_history_item", "Read one queue or history item by ID.", { id }, ({ id }) => call(`/api/history/${pathId(id)}`));
 
   register("ytptube_add_downloads", "Add one or more URLs to the download queue.", {
-    items: z.union([download, z.array(download).min(1)]),
-  }, ({ items }) => call("/api/history", { method: "POST", body: items }), true);
+    // Parse the endpoint contract after the local mutation gate.
+    items: z.union([arbitraryObject, z.array(arbitraryObject).min(1)]),
+  }, ({ items }) => call("/api/history", {
+    method: "POST",
+    body: z.union([download, z.array(download).min(1)]).parse(items),
+  }), true);
   register("ytptube_retry_history_item", "Read a history item and requeue only saved download-request fields.", { id }, async ({ id }) => {
     const stored = await call(`/api/history/${pathId(id)}`) as Record<string, unknown>;
     const allowed = ["url", "preset", "folder", "cookies", "template", "cli", "extras", "auto_start"] as const;
@@ -163,7 +171,7 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_list_tasks", "List scheduled tasks with pagination.", { page, per_page: perPage }, (input) => call("/api/tasks", { query: input as RequestOptions["query"] }));
   register("ytptube_get_task", "Read a scheduled task by numeric ID.", { id: numericId }, ({ id }) => call(`/api/tasks/${pathId(id)}`));
   register("ytptube_inspect_task_url", "Preview the task handler and items for a URL; this only calls /api/tasks/inspect and never queues downloads.", {
-    url: z.string().url(), preset: z.string().optional(), handler: z.string().optional(), static_only: z.boolean().default(false),
+    url: httpUrl, preset: z.string().optional(), handler: z.string().optional(), static_only: z.boolean().default(false),
   }, (input) => call("/api/tasks/inspect", { method: "POST", body: input }));
   register("ytptube_create_tasks", "Create one or more scheduled tasks.", {
     // Keep mutation-gate errors deterministic even for incomplete payloads;
@@ -171,8 +179,11 @@ export function createServer(config: Config, client = new YtptubeClient(config))
     tasks: z.union([arbitraryObject, z.array(arbitraryObject).min(1)]),
   }, ({ tasks }) => call("/api/tasks", { method: "POST", body: taskCreatePayload.parse(tasks) }), true);
   register("ytptube_patch_task", "Partially update a scheduled task.", {
-    id: numericId, changes: taskPatch,
-  }, ({ id, changes }) => call(`/api/tasks/${pathId(id)}`, { method: "PATCH", body: changes }), true);
+    id: numericId, changes: arbitraryObject,
+  }, ({ id, changes }) => call(`/api/tasks/${pathId(id)}`, {
+    method: "PATCH",
+    body: taskPatch.parse(changes),
+  }), true);
   register("ytptube_update_task", "Replace a scheduled task using the API PUT contract.", {
     id: numericId, task: arbitraryObject,
   }, ({ id, task }) => call(`/api/tasks/${pathId(id)}`, { method: "PUT", body: taskCreate.parse(task) }), true);
