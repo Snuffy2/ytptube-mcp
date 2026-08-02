@@ -263,4 +263,53 @@ describe("YTPTube MCP tools", () => {
     expect(failureText).not.toContain("password-value");
     expect(failureText).not.toContain("apikey-value");
   });
+
+  it("redacts authentication and cookie headers from logs and structured API errors", async () => {
+    const secrets = {
+      basic: "basic-secret-value",
+      bearer: "bearer-secret-value",
+      cookie: "session=cookie-secret-value; theme=dark",
+      setCookie: "session=set-cookie-secret-value; HttpOnly; Secure",
+    };
+    const headerText = [
+      `Authorization: Basic ${secrets.basic}`,
+      `Authorization: Bearer ${secrets.bearer}`,
+      `Cookie: ${secrets.cookie}`,
+      `Set-Cookie: ${secrets.setCookie}`,
+    ].join("\n");
+
+    const logs = await harness(false);
+    logs.request.mockResolvedValueOnce({
+      status: "worker continuing normally",
+      log: `download inspection started\n${headerText}\ndownload inspection complete`,
+    });
+    const logText = text(
+      await logs.client.callTool({ name: "ytptube_list_logs", arguments: {} }),
+    );
+    expect(logText).toContain("worker continuing normally");
+    expect(logText).toContain("download inspection complete");
+    for (const secret of Object.values(secrets)) {
+      expect(logText).not.toContain(secret);
+    }
+
+    const failure = await harness(false);
+    const { YtptubeApiError } = await import("../src/client.js");
+    failure.request.mockRejectedValueOnce(
+      new YtptubeApiError("upstream rejected request", 401, "AUTH_FAILED", {
+        operation: "task inspection remains available",
+        diagnostic: `backend response headers\n${headerText}\nretry is permitted`,
+      }),
+    );
+    const failureText = text(
+      await failure.client.callTool({ name: "ytptube_inspect_task_url", arguments: {
+        url: "https://video.test/watch/1",
+      } }),
+    );
+    expect(failureText).toContain("AUTH_FAILED");
+    expect(failureText).toContain("task inspection remains available");
+    expect(failureText).toContain("retry is permitted");
+    for (const secret of Object.values(secrets)) {
+      expect(failureText).not.toContain(secret);
+    }
+  });
 });
