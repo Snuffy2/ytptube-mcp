@@ -1,26 +1,26 @@
-name: Publish npm package
+name: Set release version and publish npm package
 
 on:
   release:
     types: [published]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: npm-release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the released tag
+      - name: Check out the release branch
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
-          persist-credentials: false
+          ref: ${{ github.event.release.target_commitish }}
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -28,6 +28,33 @@ jobs:
           node-version: "24"
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+
+      - name: Update package version from release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          npm version "${RELEASE_TAG#v}" --allow-same-version --ignore-scripts --no-git-tag-version
+
+      - name: Commit version and move release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TARGET: ${{ github.event.release.target_commitish }}
+        run: |
+          git check-ref-format --branch "$RELEASE_TARGET" > /dev/null
+          git ls-remote --exit-code --heads origin "refs/heads/$RELEASE_TARGET" > /dev/null
+          git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          previous_tag_sha="$(git rev-parse "refs/tags/$RELEASE_TAG")"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: set package version ${RELEASE_TAG#v} [skip ci]"
+            git push origin "HEAD:refs/heads/$RELEASE_TARGET"
+          fi
+
+          git tag --force "$RELEASE_TAG" HEAD
+          git push --force-with-lease="refs/tags/$RELEASE_TAG:$previous_tag_sha" origin "refs/tags/$RELEASE_TAG"
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
