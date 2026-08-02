@@ -43,7 +43,7 @@ YTPTUBE_BASE_URL=https://media.example.net/ytptube
 
 Authentication is optional. If used, set **both** `YTPTUBE_USERNAME` and `YTPTUBE_PASSWORD`; setting only one is a configuration error. Never commit `.env`, copied configuration files, or credentials to source control.
 
-`YTPTUBE_AUTH_MODE` defaults to `basic`. In that mode the server sends a URL-safe Base64 encoding of `username:password` as `Authorization: Basic ...` on every API call. Set `YTPTUBE_AUTH_MODE=apikey` only for an API/proxy that expects the same encoded credential as the `?apikey=` fallback query parameter instead.
+`YTPTUBE_AUTH_MODE` defaults to `basic`. In that mode the server sends the padded, standard Base64 encoding of `username:password` as `Authorization: Basic ...` on every API call. Set `YTPTUBE_AUTH_MODE=apikey` only for an API/proxy that expects the same encoded credential as the `?apikey=` fallback query parameter instead; query metacharacters are percent-encoded by `URLSearchParams`.
 
 `YTPTUBE_TIMEOUT_MS` is optional and defaults to `30000`. It must be an integer from `100` through `300000`; increase it only when the API/proxy genuinely needs more time.
 
