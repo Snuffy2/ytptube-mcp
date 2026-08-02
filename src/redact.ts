@@ -1,13 +1,15 @@
 const SENSITIVE_KEY = /(cookie|password|token|secret|authorization|api[ _-]?key)/i;
 const APIKEY_QUERY = /([?&]apikey=)[^&#\s"'<>]*/gi;
+const ESCAPED_SERIALIZED_HEADER = /((\\["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(\\["']))[^"'\\]*(\3)/gi;
 const SERIALIZED_HEADER = /((["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(["']))[^"'\\]*(\3)/gi;
-const AUTHORIZATION_HEADER = /(\b(?:proxy-authorization|authorization)\s*[:=]\s*(?:["'])?(?:basic|bearer)\s+)[^\s,"'<>}\]]+/gi;
+const AUTHORIZATION_HEADER = /(\b(?:proxy-authorization|authorization)\s*[:=]\s*(?:["'])?[a-z][a-z0-9+.-]*\s+)[^\s,"'<>}\]]+/gi;
 const API_KEY_HEADER = /(\bx-api-key\s*[:=]\s*(?:["'])?)[^\s,"'<>}\]]+/gi;
-const COOKIE_HEADER = /(\b(?:set-cookie|cookie)\s*:\s*)[^\r\n]*/gi;
+const COOKIE_HEADER = /(\b(?:set-cookie|cookie)\s*[:=]\s*)[^\r\n]*/gi;
 
 function redactString(value: string): string {
   return value
     .replace(APIKEY_QUERY, "$1[REDACTED]")
+    .replace(ESCAPED_SERIALIZED_HEADER, "$1[REDACTED]$4")
     .replace(SERIALIZED_HEADER, "$1[REDACTED]$4")
     .replace(AUTHORIZATION_HEADER, "$1[REDACTED]")
     .replace(API_KEY_HEADER, "$1[REDACTED]")

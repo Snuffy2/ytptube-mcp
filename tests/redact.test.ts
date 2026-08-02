@@ -73,4 +73,22 @@ describe("redact", () => {
     expect(text).toContain("operation=inspect");
     expect(text).toContain("complete");
   });
+
+  it("redacts escaped serialized authorization while preserving surrounding text", () => {
+    expect(redact('response {\\"Authorization\\":\\"Basic secret\\"}')).toBe(
+      'response {\\"Authorization\\":\\"[REDACTED]\\"}',
+    );
+  });
+
+  it("redacts authorization credentials for schemes other than Basic and Bearer", () => {
+    expect(redact("Authorization: Digest secret\nrequest failed")).toBe(
+      "Authorization: Digest [REDACTED]\nrequest failed",
+    );
+  });
+
+  it("redacts equals-delimited cookie diagnostics", () => {
+    expect(redact("Cookie=session=secret\nrequest failed")).toBe(
+      "Cookie=[REDACTED]\nrequest failed",
+    );
+  });
 });
