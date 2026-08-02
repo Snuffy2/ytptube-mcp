@@ -75,8 +75,8 @@ directory. Explicit environment variables take precedence over `.env`.
 
 ## Configure your MCP client
 
-Use the npm-installed command and keep values specific to your ytptube instance
-in its environment configuration:
+For an npm installation, use the `ytptube-mcp` command and keep values specific
+to your ytptube instance in its environment configuration:
 
 ```toml
 [mcp_servers.ytptube]
@@ -90,8 +90,16 @@ YTPTUBE_ALLOW_MUTATIONS = "false"
 # YTPTUBE_PASSWORD = "your-password"
 ```
 
-For a source checkout instead, set `command = "node"` and use the absolute path
-to its built `dist/index.js` as the sole `args` entry. Do not commit actual
+For a source checkout, run its built server with Node. Replace the placeholder
+with the absolute path to your checkout:
+
+```toml
+[mcp_servers.ytptube]
+command = "node"
+args = ["/absolute/path/to/ytptube-mcp/dist/index.js"]
+```
+
+The checkout's `.env` file supplies its configuration. Do not commit actual
 credentials or store them in shared shell history.
 
 ### Environment variables

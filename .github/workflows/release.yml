@@ -5,22 +5,24 @@ on:
     types: [published]
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: npm-release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  verify:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the release branch
+      - name: Check out the released tag
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.target_commitish }}
+          ref: refs/tags/${{ github.event.release.tag_name }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -35,36 +37,93 @@ jobs:
         run: |
           npm version "${RELEASE_TAG#v}" --allow-same-version --ignore-scripts --no-git-tag-version
 
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify and pack the release
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+          mkdir release-artifact
+          npm pack --pack-destination release-artifact
+
+      - name: Upload verified package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: release-artifact/*.tgz
+          if-no-files-found: error
+
+  update-manifest:
+    needs: verify
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the released tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Update package version from release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          npm version "${RELEASE_TAG#v}" --allow-same-version --ignore-scripts --no-git-tag-version
+
       - name: Commit version and move release tag
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_TARGET: ${{ github.event.release.target_commitish }}
         run: |
           git check-ref-format --branch "$RELEASE_TARGET" > /dev/null
-          git ls-remote --exit-code --heads origin "refs/heads/$RELEASE_TARGET" > /dev/null
-          git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
-          previous_tag_sha="$(git rev-parse "refs/tags/$RELEASE_TAG")"
+          original_tag_object="$(git rev-parse "refs/tags/$RELEASE_TAG")"
+          original_tag_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          remote_target_commit="$(git ls-remote --exit-code --heads origin "refs/heads/$RELEASE_TARGET" | cut -f1)"
+
+          if [ "$remote_target_commit" != "$original_tag_commit" ]; then
+            echo "Release target moved after the tag was created; refusing to update it." >&2
+            exit 1
+          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: set package version ${RELEASE_TAG#v} [skip ci]"
-            git push origin "HEAD:refs/heads/$RELEASE_TARGET"
           fi
 
+          git push --force-with-lease="refs/heads/$RELEASE_TARGET:$original_tag_commit" origin "HEAD:refs/heads/$RELEASE_TARGET"
           git tag --force "$RELEASE_TAG" HEAD
-          git push --force-with-lease="refs/tags/$RELEASE_TAG:$previous_tag_sha" origin "refs/tags/$RELEASE_TAG"
+          git push --force-with-lease="refs/tags/$RELEASE_TAG:$original_tag_object" origin "refs/tags/$RELEASE_TAG"
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
+  publish:
+    needs: [verify, update-manifest]
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
-      - name: Verify the release
-        run: |
-          npm run typecheck
-          npm test
-          npm run build
-          npm pack --dry-run
+      - name: Download verified package
+        uses: actions/download-artifact@v5
+        with:
+          name: npm-package
+          path: release-artifact
 
       - name: Publish to npm
-        run: npm publish
+        run: npm publish release-artifact/*.tgz
