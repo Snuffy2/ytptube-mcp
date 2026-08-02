@@ -186,8 +186,8 @@ request before contacting ytptube.
 
 ## Development
 
-Install [`prek`](https://prek.j178.dev/installation/) before running the
-repository's development and dependency-update scripts.
+Install [`prek`](https://prek.j178.dev/installation/) to run the repository's
+quality hooks or refresh its hooks with the dependency-update script.
 
 ```sh
 # Install dependencies, type-check, test, and build.
