@@ -113,17 +113,64 @@ The gate covers download additions/retries, queue controls, history and archive
 changes, task and preset changes, and metadata generation. Clearing history
 does not remove media unless the request explicitly asks for it.
 
-## Available tools
+## Available Tools
 
-All tools are prefixed with `ytptube_`.
+Every tool name begins with `ytptube_`. Tools marked **Yes** in the Mutating
+column require `YTPTUBE_ALLOW_MUTATIONS=true`; otherwise the server rejects the
+request before contacting ytptube.
 
-| Tool group            | Tools                                                                                                                     | Purpose                                                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health and inspection | `ping`, `get_system_configuration`, `get_ytdlp_options`, `validate_cli_options`, `inspect_url`, `list_logs`, `live_queue` | Check the API and read service, queue, log, and downloader state. URL inspection accepts a URL plus optional preset, force, and entries values. |
-| Queue and history     | `list_history`, `get_history_item`, `add_downloads`, `retry_history_item`, `queue_control`, `clear_history`               | Inspect queued and completed items; add, retry, or manage them only when mutations are enabled.                                                 |
-| Archive and metadata  | `list_archive`, `set_history_archive`, `generate_task_metadata`, `generate_history_nfo`                                   | Search archive records and generate or change metadata when mutations are enabled.                                                              |
-| Tasks                 | `list_tasks`, `get_task`, `inspect_task_url`, `create_tasks`, `patch_task`, `update_task`                                 | Inspect scheduled work or manage it when write access is enabled. Task URL inspection is a preview only.                                        |
-| Presets               | `list_presets`, `get_preset`, `create_preset`, `patch_preset`, `update_preset`                                            | Inspect or manage reusable download settings when write access is enabled.                                                                      |
+### Health and Inspection Tools
+
+| Tool                               | Description                                                        | Mutating |
+| ---------------------------------- | ------------------------------------------------------------------ | -------- |
+| `ytptube_ping`                     | Check whether the configured ytptube API is reachable.             | No       |
+| `ytptube_get_system_configuration` | Read system configuration with sensitive fields redacted.          | No       |
+| `ytptube_get_ytdlp_options`        | Read the active yt-dlp option configuration.                       | No       |
+| `ytptube_validate_cli_options`     | Parse and validate yt-dlp CLI options without starting a download. | No       |
+| `ytptube_inspect_url`              | Inspect URL metadata without adding it to the download queue.      | No       |
+| `ytptube_list_logs`                | Read recent application logs when file logging is enabled.         | No       |
+| `ytptube_live_queue`               | Read current in-memory queue progress and counts.                  | No       |
+
+### Queue and History Tools
+
+| Tool                         | Description                                                          | Mutating |
+| ---------------------------- | -------------------------------------------------------------------- | -------- |
+| `ytptube_list_history`       | List a paginated queue or completed-history page.                    | No       |
+| `ytptube_get_history_item`   | Read one queue or history item by ID.                                | No       |
+| `ytptube_add_downloads`      | Add one or more URLs to the download queue.                          | Yes      |
+| `ytptube_retry_history_item` | Requeue a history item using only its saved download-request fields. | Yes      |
+| `ytptube_queue_control`      | Start, pause, force-start, reorder, or cancel queued downloads.      | Yes      |
+| `ytptube_clear_history`      | Delete selected queue/history records; media deletion is opt-in.     | Yes      |
+
+### Archive and Metadata Tools
+
+| Tool                             | Description                                                            | Mutating |
+| -------------------------------- | ---------------------------------------------------------------------- | -------- |
+| `ytptube_list_archive`           | List archive entries for a preset, optionally filtered by archive IDs. | No       |
+| `ytptube_set_history_archive`    | Archive or unarchive a history item using its configured archive file. | Yes      |
+| `ytptube_generate_task_metadata` | Generate task metadata, NFO, and image sidecar files.                  | Yes      |
+| `ytptube_generate_history_nfo`   | Generate an NFO sidecar for a completed history item.                  | Yes      |
+
+### Task Tools
+
+| Tool                       | Description                                                          | Mutating |
+| -------------------------- | -------------------------------------------------------------------- | -------- |
+| `ytptube_list_tasks`       | List scheduled tasks with pagination.                                | No       |
+| `ytptube_get_task`         | Read a scheduled task by numeric ID.                                 | No       |
+| `ytptube_inspect_task_url` | Preview task handling and items for a URL without queuing downloads. | No       |
+| `ytptube_create_tasks`     | Create one or more scheduled tasks.                                  | Yes      |
+| `ytptube_patch_task`       | Partially update a scheduled task.                                   | Yes      |
+| `ytptube_update_task`      | Replace a scheduled task using the API PUT contract.                 | Yes      |
+
+### Preset Tools
+
+| Tool                    | Description                                                       | Mutating |
+| ----------------------- | ----------------------------------------------------------------- | -------- |
+| `ytptube_list_presets`  | List download presets with pagination and sorting.                | No       |
+| `ytptube_get_preset`    | Read a download preset by numeric ID.                             | No       |
+| `ytptube_create_preset` | Create a download preset.                                         | Yes      |
+| `ytptube_patch_preset`  | Partially update a non-default download preset.                   | Yes      |
+| `ytptube_update_preset` | Replace a non-default download preset using the API PUT contract. | Yes      |
 
 ### Important limits
 
