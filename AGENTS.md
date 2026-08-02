@@ -5,3 +5,9 @@
 - `YTPTUBE_BASE_URL` is required. Authentication is optional, but username and password must be configured together. Do not place real credentials in committed files, tests, logs, or documentation.
 - Keep global configuration read-only. Do not add file browsing/streaming, terminal/system administration, notifications, task/preset deletion, or SSE without an explicit product decision and matching safety review.
 - Before changing the public tool contract, update README examples and exercise a read-only path plus a rejected-mutation path.
+- Install dependencies with `npm ci --ignore-scripts` unless a task explicitly
+  requires lifecycle scripts.
+- Run `./scripts/test.sh` for local verification; it installs dependencies,
+  type-checks, tests, and builds the project.
+- Run `prek run --all-files` as the only linting and formatting command. Do
+  not add or invoke standalone linter or formatter commands.

@@ -11,11 +11,16 @@ describe("loadCheckoutEnvironment", () => {
     const directory = await mkdtemp(join(tmpdir(), "ytptube-mcp-env-"));
     try {
       const envPath = join(directory, ".env");
-      await writeFile(envPath, [
-        "YTPTUBE_BASE_URL=https://from-file.test",
-        "YTPTUBE_TIMEOUT_MS=45000",
-      ].join("\n"));
-      const env: NodeJS.ProcessEnv = { YTPTUBE_BASE_URL: "https://explicit.test" };
+      await writeFile(
+        envPath,
+        [
+          "YTPTUBE_BASE_URL=https://from-file.test",
+          "YTPTUBE_TIMEOUT_MS=45000",
+        ].join("\n"),
+      );
+      const env: NodeJS.ProcessEnv = {
+        YTPTUBE_BASE_URL: "https://explicit.test",
+      };
 
       loadCheckoutEnvironment(env, envPath);
 

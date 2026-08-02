@@ -28,12 +28,15 @@ async function main(): Promise<void> {
 }
 
 if (
-  process.argv[1] !== undefined
-  && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))
+  process.argv[1] !== undefined &&
+  realpathSync(fileURLToPath(import.meta.url)) ===
+    realpathSync(resolve(process.argv[1]))
 ) {
   main().catch((error: unknown) => {
     // stderr is safe for operator-facing startup failures; stdout is MCP protocol only.
-    process.stderr.write(`ytptube-mcp: ${error instanceof Error ? error.message : "startup failed"}\n`);
+    process.stderr.write(
+      `ytptube-mcp: ${error instanceof Error ? error.message : "startup failed"}\n`,
+    );
     process.exitCode = 1;
   });
 }

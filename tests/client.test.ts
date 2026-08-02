@@ -24,7 +24,9 @@ function jsonResponse(payload: unknown, status = 200): Response {
 
 describe("YtptubeClient", () => {
   it("preserves the base path and sends padded standard Base64 Basic auth on every request", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ ok: true }));
     const client = new YtptubeClient(config(), fetchImpl);
     // This vector requires padding and uses `+`, distinguishing standard Base64
     // from the unpadded URL-safe variant rejected by the backend decoder.
@@ -46,7 +48,9 @@ describe("YtptubeClient", () => {
   });
 
   it("uses the apikey query parameter without an Authorization header", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ ok: true }));
     const client = new YtptubeClient(config({ authMode: "apikey" }), fetchImpl);
     const expectedCredential = "dcK+OnA=";
 
@@ -73,7 +77,9 @@ describe("YtptubeClient", () => {
     );
     const client = new YtptubeClient(config(), fetchImpl);
 
-    const error = await client.request("queue").catch((reason: unknown) => reason);
+    const error = await client
+      .request("queue")
+      .catch((reason: unknown) => reason);
 
     expect(error).toBeInstanceOf(YtptubeApiError);
     expect(error).toMatchObject({
@@ -88,7 +94,9 @@ describe("YtptubeClient", () => {
   it("maps transport failures to a stable error without leaking the thrown message", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
-      .mockRejectedValue(new Error("connect failed with password=do-not-expose"));
+      .mockRejectedValue(
+        new Error("connect failed with password=do-not-expose"),
+      );
     const client = new YtptubeClient(config(), fetchImpl);
 
     await expect(client.request("history")).rejects.toMatchObject({
@@ -101,19 +109,27 @@ describe("YtptubeClient", () => {
   it("keeps the timeout active while consuming the response body", async () => {
     vi.useFakeTimers();
     try {
-      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => ({
-        bodyUsed: false,
-        headers: new Headers({ "content-type": "application/json" }),
-        ok: true,
-        status: 200,
-        text: () => new Promise<string>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => {
-            const error = new Error("body read aborted");
-            error.name = "AbortError";
-            reject(error);
-          }, { once: true });
-        }),
-      }) as Response);
+      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(
+        async (_url, init) =>
+          ({
+            bodyUsed: false,
+            headers: new Headers({ "content-type": "application/json" }),
+            ok: true,
+            status: 200,
+            text: () =>
+              new Promise<string>((_resolve, reject) => {
+                init?.signal?.addEventListener(
+                  "abort",
+                  () => {
+                    const error = new Error("body read aborted");
+                    error.name = "AbortError";
+                    reject(error);
+                  },
+                  { once: true },
+                );
+              }),
+          }) as Response,
+      );
       const client = new YtptubeClient(config({ timeoutMs: 10 }), fetchImpl);
 
       const request = client.request("history");

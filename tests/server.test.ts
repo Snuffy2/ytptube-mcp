@@ -21,11 +21,17 @@ async function harness(allowMutations: boolean): Promise<Harness> {
     allowMutations,
     timeoutMs: 1_000,
   };
-  const request = vi.fn<YtptubeClient["request"]>().mockResolvedValue({ ok: true });
+  const request = vi
+    .fn<YtptubeClient["request"]>()
+    .mockResolvedValue({ ok: true });
   const server = createServer(config, { request } as unknown as YtptubeClient);
   const client = new Client({ name: "ytptube-mcp-tests", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    server.connect(serverTransport),
+    client.connect(clientTransport),
+  ]);
   const result = {
     client,
     request,
@@ -39,7 +45,8 @@ async function harness(allowMutations: boolean): Promise<Harness> {
 }
 
 function text(result: Awaited<ReturnType<Client["callTool"]>>): string {
-  const block = (result as { content: Array<{ type: string; text?: string }> }).content[0];
+  const block = (result as { content: Array<{ type: string; text?: string }> })
+    .content[0];
   if (block?.type !== "text") throw new Error("Expected a text tool result");
   if (block.text === undefined) throw new Error("Expected text content");
   return block.text;
@@ -54,19 +61,28 @@ describe("YTPTube MCP tools", () => {
     const { client, request } = await harness(false);
 
     const mutations = [
-      ["ytptube_add_downloads", { items: { url: "https://video.test/watch/1" } }],
+      [
+        "ytptube_add_downloads",
+        { items: { url: "https://video.test/watch/1" } },
+      ],
       ["ytptube_retry_history_item", { id: "7" }],
       ["ytptube_queue_control", { action: "pause", ids: ["7"] }],
       ["ytptube_clear_history", { type: "done", ids: ["7"] }],
       ["ytptube_set_history_archive", { id: "7", archived: true }],
       ["ytptube_generate_task_metadata", { id: 7 }],
       ["ytptube_generate_history_nfo", { id: 7 }],
-      ["ytptube_create_tasks", { tasks: { name: "task", url: "https://video.test/watch/1" } }],
+      [
+        "ytptube_create_tasks",
+        { tasks: { name: "task", url: "https://video.test/watch/1" } },
+      ],
       [
         "ytptube_patch_task",
         { id: 7, changes: { url: "https://video.test/watch/2" } },
       ],
-      ["ytptube_update_task", { id: 7, task: { name: "task", url: "https://video.test/watch/2" } }],
+      [
+        "ytptube_update_task",
+        { id: 7, task: { name: "task", url: "https://video.test/watch/2" } },
+      ],
       ["ytptube_create_preset", { preset: { name: "audio" } }],
       ["ytptube_patch_preset", { id: 7, changes: { description: "updated" } }],
       ["ytptube_update_preset", { id: 7, preset: { name: "audio" } }],
@@ -90,21 +106,27 @@ describe("YTPTube MCP tools", () => {
   it.each([
     [{ type: "done", ids: ["9"] }, false],
     [{ type: "done", ids: ["9"], delete_media: true }, true],
-  ])("maps clear-history media deletion opt-in %#", async (arguments_, removeFile) => {
-    const { client, request } = await harness(true);
+  ])(
+    "maps clear-history media deletion opt-in %#",
+    async (arguments_, removeFile) => {
+      const { client, request } = await harness(true);
 
-    await client.callTool({ name: "ytptube_clear_history", arguments: arguments_ });
+      await client.callTool({
+        name: "ytptube_clear_history",
+        arguments: arguments_,
+      });
 
-    expect(request).toHaveBeenCalledWith("/api/history", {
-      method: "DELETE",
-      body: {
-        type: "done",
-        ids: ["9"],
-        status: undefined,
-        remove_file: removeFile,
-      },
-    });
-  });
+      expect(request).toHaveBeenCalledWith("/api/history", {
+        method: "DELETE",
+        body: {
+          type: "done",
+          ids: ["9"],
+          status: undefined,
+          remove_file: removeFile,
+        },
+      });
+    },
+  );
 
   it("previews a task only through /api/tasks/inspect", async () => {
     const { client, request } = await harness(false);
@@ -122,7 +144,9 @@ describe("YTPTube MCP tools", () => {
         static_only: false,
       },
     });
-    expect(request.mock.calls.some(([path]) => path === "/api/history")).toBe(false);
+    expect(request.mock.calls.some(([path]) => path === "/api/history")).toBe(
+      false,
+    );
   });
 
   it("retries by reading the item and re-queueing only documented download fields", async () => {
@@ -234,21 +258,52 @@ describe("YTPTube MCP tools", () => {
   });
 
   it.each([
-    ["ytptube_add_downloads", { items: { url: "https://video.test/watch/1", cli: "--exec unsafe" } }],
-    ["ytptube_create_tasks", { tasks: { name: "task", url: "https://video.test/watch/1", cli: "--exec unsafe" } }],
+    [
+      "ytptube_add_downloads",
+      { items: { url: "https://video.test/watch/1", cli: "--exec unsafe" } },
+    ],
+    [
+      "ytptube_create_tasks",
+      {
+        tasks: {
+          name: "task",
+          url: "https://video.test/watch/1",
+          cli: "--exec unsafe",
+        },
+      },
+    ],
     ["ytptube_patch_task", { id: 7, changes: { cli: "--exec unsafe" } }],
-    ["ytptube_update_task", { id: 7, task: { name: "task", url: "https://video.test/watch/1", cli: "--exec unsafe" } }],
-    ["ytptube_create_preset", { preset: { name: "audio", cli: "--exec unsafe" } }],
+    [
+      "ytptube_update_task",
+      {
+        id: 7,
+        task: {
+          name: "task",
+          url: "https://video.test/watch/1",
+          cli: "--exec unsafe",
+        },
+      },
+    ],
+    [
+      "ytptube_create_preset",
+      { preset: { name: "audio", cli: "--exec unsafe" } },
+    ],
     ["ytptube_patch_preset", { id: 7, changes: { cli: "--exec unsafe" } }],
-    ["ytptube_update_preset", { id: 7, preset: { name: "audio", cli: "--exec unsafe" } }],
-  ])("rejects raw CLI input for write tool %s without a request", async (name, arguments_) => {
-    const { client, request } = await harness(true);
+    [
+      "ytptube_update_preset",
+      { id: 7, preset: { name: "audio", cli: "--exec unsafe" } },
+    ],
+  ])(
+    "rejects raw CLI input for write tool %s without a request",
+    async (name, arguments_) => {
+      const { client, request } = await harness(true);
 
-    const response = await client.callTool({ name, arguments: arguments_ });
+      const response = await client.callTool({ name, arguments: arguments_ });
 
-    expect(response.isError).toBe(true);
-    expect(request).not.toHaveBeenCalled();
-  });
+      expect(response.isError).toBe(true);
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects raw CLI input for URL inspection without a request", async () => {
     const { client, request } = await harness(false);
@@ -322,7 +377,9 @@ describe("YTPTube MCP tools", () => {
     expect(request).not.toHaveBeenCalled();
 
     const tools = await client.listTools();
-    const createTask = tools.tools.find(({ name }) => name === "ytptube_create_tasks");
+    const createTask = tools.tools.find(
+      ({ name }) => name === "ytptube_create_tasks",
+    );
     const taskSchemaText = JSON.stringify(createTask?.inputSchema);
     expect(taskSchemaText).not.toContain('"cookies"');
     expect(taskSchemaText).not.toContain('"config"');
@@ -331,13 +388,22 @@ describe("YTPTube MCP tools", () => {
   it("publishes the strict nested mutation payload contracts", async () => {
     const { client } = await harness(false);
     const tools = await client.listTools();
-    const schemaText = (name: string): string => JSON.stringify(
-      tools.tools.find((tool) => tool.name === name)?.inputSchema,
-    );
+    const schemaText = (name: string): string =>
+      JSON.stringify(
+        tools.tools.find((tool) => tool.name === name)?.inputSchema,
+      );
 
     const downloads = schemaText("ytptube_add_downloads");
     expect(downloads).toContain('"required":["url"]');
-    for (const field of ["url", "preset", "folder", "cookies", "template", "auto_start", "extras"]) {
+    for (const field of [
+      "url",
+      "preset",
+      "folder",
+      "cookies",
+      "template",
+      "auto_start",
+      "extras",
+    ]) {
       expect(downloads).toContain(`"${field}"`);
     }
 
@@ -348,7 +414,17 @@ describe("YTPTube MCP tools", () => {
     ];
     expect(tasks[0]).toContain('"required":["name","url"]');
     for (const schema of tasks) {
-      for (const field of ["name", "url", "timer", "preset", "folder", "template", "auto_start", "handler_enabled", "enabled"]) {
+      for (const field of [
+        "name",
+        "url",
+        "timer",
+        "preset",
+        "folder",
+        "template",
+        "auto_start",
+        "handler_enabled",
+        "enabled",
+      ]) {
         expect(schema).toContain(`"${field}"`);
       }
     }
@@ -361,7 +437,13 @@ describe("YTPTube MCP tools", () => {
     expect(presets[0]).toContain('"required":["name"]');
     expect(presets[2]).toContain('"required":["name"]');
     for (const schema of presets) {
-      for (const field of ["name", "description", "folder", "template", "cookies"]) {
+      for (const field of [
+        "name",
+        "description",
+        "folder",
+        "template",
+        "cookies",
+      ]) {
         expect(schema).toContain(`"${field}"`);
       }
       expect(schema).not.toContain('"cli"');
@@ -390,7 +472,9 @@ describe("YTPTube MCP tools", () => {
     const { client, request } = await harness(true);
     const tools = await client.listTools();
     const tool = tools.tools.find((candidate) => candidate.name === name);
-    const idSchema = (tool?.inputSchema as { properties?: { id?: { type?: string } } }).properties?.id;
+    const idSchema = (
+      tool?.inputSchema as { properties?: { id?: { type?: string } } }
+    ).properties?.id;
 
     expect(idSchema?.type).toBe("integer");
     const result = await client.callTool({ name, arguments: { id: "7" } });
@@ -402,24 +486,27 @@ describe("YTPTube MCP tools", () => {
     "ytptube_queue_control",
     "ytptube_set_history_archive",
     "ytptube_generate_history_nfo",
-  ])(
-    "publishes %s as potentially destructive",
-    async (name) => {
-      const { client } = await harness(false);
-      const tools = await client.listTools();
-      const tool = tools.tools.find((candidate) => candidate.name === name);
+  ])("publishes %s as potentially destructive", async (name) => {
+    const { client } = await harness(false);
+    const tools = await client.listTools();
+    const tool = tools.tools.find((candidate) => candidate.name === name);
 
-      expect(tool?.annotations?.destructiveHint).toBe(true);
-    },
-  );
+    expect(tool?.annotations?.destructiveHint).toBe(true);
+  });
 
   it("rejects invalid disabled-mutation payloads without a request", async () => {
     const { client, request } = await harness(false);
 
     for (const [name, arguments_] of [
       ["ytptube_add_downloads", { items: { url: "file:///etc/passwd" } }],
-      ["ytptube_create_tasks", { tasks: { name: "unsafe", url: "data:text/plain,secret" } }],
-      ["ytptube_patch_task", { id: 7, changes: { url: "ftp://video.test/file" } }],
+      [
+        "ytptube_create_tasks",
+        { tasks: { name: "unsafe", url: "data:text/plain,secret" } },
+      ],
+      [
+        "ytptube_patch_task",
+        { id: 7, changes: { url: "ftp://video.test/file" } },
+      ],
       ["ytptube_update_task", { id: 7, task: { url: "not-a-url" } }],
     ] as const) {
       const blocked = await client.callTool({ name, arguments: arguments_ });
@@ -431,30 +518,45 @@ describe("YTPTube MCP tools", () => {
   it.each([
     ["ytptube_inspect_url", { url: "file:///etc/passwd" }],
     ["ytptube_inspect_task_url", { url: "data:text/plain,secret" }],
-  ])("rejects unsafe URL schemes for read-only tool %s", async (name, arguments_) => {
-    const { client, request } = await harness(false);
+  ])(
+    "rejects unsafe URL schemes for read-only tool %s",
+    async (name, arguments_) => {
+      const { client, request } = await harness(false);
 
-    const response = await client.callTool({ name, arguments: arguments_ });
+      const response = await client.callTool({ name, arguments: arguments_ });
 
-    expect(response.isError).toBe(true);
-    expect(text(response)).toMatch(/http|https/i);
-    expect(request).not.toHaveBeenCalled();
-  });
+      expect(response.isError).toBe(true);
+      expect(text(response)).toMatch(/http|https/i);
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ["ytptube_add_downloads", { items: { url: "file:///etc/passwd" } }],
-    ["ytptube_create_tasks", { tasks: { name: "unsafe", url: "data:text/plain,secret" } }],
-    ["ytptube_patch_task", { id: 7, changes: { url: "ftp://video.test/file" } }],
-    ["ytptube_update_task", { id: 7, task: { name: "unsafe", url: "file:///etc/passwd" } }],
-  ])("rejects unsafe URL schemes for enabled mutation %s", async (name, arguments_) => {
-    const { client, request } = await harness(true);
+    [
+      "ytptube_create_tasks",
+      { tasks: { name: "unsafe", url: "data:text/plain,secret" } },
+    ],
+    [
+      "ytptube_patch_task",
+      { id: 7, changes: { url: "ftp://video.test/file" } },
+    ],
+    [
+      "ytptube_update_task",
+      { id: 7, task: { name: "unsafe", url: "file:///etc/passwd" } },
+    ],
+  ])(
+    "rejects unsafe URL schemes for enabled mutation %s",
+    async (name, arguments_) => {
+      const { client, request } = await harness(true);
 
-    const response = await client.callTool({ name, arguments: arguments_ });
+      const response = await client.callTool({ name, arguments: arguments_ });
 
-    expect(response.isError).toBe(true);
-    expect(text(response)).toMatch(/http|https/i);
-    expect(request).not.toHaveBeenCalled();
-  });
+      expect(response.isError).toBe(true);
+      expect(text(response)).toMatch(/http|https/i);
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
 
   it("accepts HTTPS download URLs", async () => {
     const { client, request } = await harness(true);
@@ -553,9 +655,12 @@ describe("YTPTube MCP tools", () => {
       }),
     );
     const failureText = text(
-      await failure.client.callTool({ name: "ytptube_inspect_task_url", arguments: {
-        url: "https://video.test/watch/1",
-      } }),
+      await failure.client.callTool({
+        name: "ytptube_inspect_task_url",
+        arguments: {
+          url: "https://video.test/watch/1",
+        },
+      }),
     );
     expect(failureText).toContain("AUTH_FAILED");
     expect(failureText).toContain("task inspection remains available");
