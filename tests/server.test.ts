@@ -234,6 +234,36 @@ describe("YTPTube MCP tools", () => {
     },
   );
 
+  it.each([
+    "ytptube_generate_task_metadata",
+    "ytptube_patch_task",
+    "ytptube_update_task",
+    "ytptube_patch_preset",
+    "ytptube_update_preset",
+  ])("publishes and enforces a numeric ID for %s", async (name) => {
+    const { client, request } = await harness(true);
+    const tools = await client.listTools();
+    const tool = tools.tools.find((candidate) => candidate.name === name);
+    const idSchema = (tool?.inputSchema as { properties?: { id?: { type?: string } } }).properties?.id;
+
+    expect(idSchema?.type).toBe("integer");
+    const result = await client.callTool({ name, arguments: { id: "7" } });
+    expect(result.isError).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("keeps mutation gating ahead of handler payload validation", async () => {
+    const { client, request } = await harness(false);
+
+    const blocked = await client.callTool({
+      name: "ytptube_update_task",
+      arguments: { id: 7, task: { url: "not-a-url" } },
+    });
+
+    expect(text(blocked)).toContain("MUTATIONS_DISABLED");
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it("redacts nested secrets from successful and structured-error result text", async () => {
     const success = await harness(false);
     success.request.mockResolvedValueOnce({

@@ -155,7 +155,7 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_set_history_archive", "Archive or unarchive a history item using its configured archive file.", {
     id, archived: z.boolean(),
   }, ({ id, archived }) => call(`/api/history/${pathId(id)}/archive`, { method: archived ? "POST" : "DELETE" }), true);
-  register("ytptube_generate_task_metadata", "Generate task metadata, NFO, and image sidecar files.", { id }, ({ id }) => call(`/api/tasks/${pathId(numericId.parse(id))}/metadata`, { method: "POST" }), true);
+  register("ytptube_generate_task_metadata", "Generate task metadata, NFO, and image sidecar files.", { id: numericId }, ({ id }) => call(`/api/tasks/${pathId(id)}/metadata`, { method: "POST" }), true);
   register("ytptube_generate_history_nfo", "Generate an NFO sidecar for a completed history item.", {
     id, type: z.enum(["tv", "movie"]).default("tv"), overwrite: z.boolean().default(false),
   }, ({ id, type, overwrite }) => call(`/api/history/${pathId(id)}/nfo`, { method: "POST", body: { type, overwrite } }), true);
@@ -171,11 +171,11 @@ export function createServer(config: Config, client = new YtptubeClient(config))
     tasks: z.union([arbitraryObject, z.array(arbitraryObject).min(1)]),
   }, ({ tasks }) => call("/api/tasks", { method: "POST", body: taskCreatePayload.parse(tasks) }), true);
   register("ytptube_patch_task", "Partially update a scheduled task.", {
-    id, changes: taskPatch,
-  }, ({ id, changes }) => call(`/api/tasks/${pathId(numericId.parse(id))}`, { method: "PATCH", body: changes }), true);
+    id: numericId, changes: taskPatch,
+  }, ({ id, changes }) => call(`/api/tasks/${pathId(id)}`, { method: "PATCH", body: changes }), true);
   register("ytptube_update_task", "Replace a scheduled task using the API PUT contract.", {
-    id, task: arbitraryObject,
-  }, ({ id, task }) => call(`/api/tasks/${pathId(numericId.parse(id))}`, { method: "PUT", body: taskCreate.parse(task) }), true);
+    id: numericId, task: arbitraryObject,
+  }, ({ id, task }) => call(`/api/tasks/${pathId(id)}`, { method: "PUT", body: taskCreate.parse(task) }), true);
 
   register("ytptube_list_presets", "List download presets with pagination and sorting.", {
     page, per_page: perPage, sort: z.string().optional(), order: z.string().optional(), exclude_defaults: z.boolean().optional(),
@@ -183,11 +183,11 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_get_preset", "Read a download preset by numeric ID.", { id: numericId }, ({ id }) => call(`/api/presets/${pathId(id)}`));
   register("ytptube_create_preset", "Create a download preset.", { preset }, ({ preset }) => call("/api/presets", { method: "POST", body: preset }), true);
   register("ytptube_patch_preset", "Partially update a non-default download preset.", {
-    id, changes: preset.partial().refine((value) => Object.keys(value).length > 0, "changes must not be empty"),
-  }, ({ id, changes }) => call(`/api/presets/${pathId(numericId.parse(id))}`, { method: "PATCH", body: changes }), true);
+    id: numericId, changes: preset.partial().refine((value) => Object.keys(value).length > 0, "changes must not be empty"),
+  }, ({ id, changes }) => call(`/api/presets/${pathId(id)}`, { method: "PATCH", body: changes }), true);
   register("ytptube_update_preset", "Replace a non-default download preset using the API PUT contract.", {
-    id, preset,
-  }, ({ id, preset }) => call(`/api/presets/${pathId(numericId.parse(id))}`, { method: "PUT", body: preset }), true);
+    id: numericId, preset,
+  }, ({ id, preset }) => call(`/api/presets/${pathId(id)}`, { method: "PUT", body: preset }), true);
 
   return server;
 }

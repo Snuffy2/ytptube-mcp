@@ -56,4 +56,21 @@ describe("redact", () => {
     expect(text).toContain("apikey=[REDACTED]");
     expect(text).toContain("limit=5");
   });
+
+  it("redacts serialized authentication and API key headers without removing safe text", () => {
+    const secrets = ["basic-secret", "proxy-secret", "api-key-secret", "cookie-secret"];
+    const result = redact([
+      `response headers: {"Authorization":"Basic ${secrets[0]}","status":"ok"}`,
+      `Proxy-Authorization: Bearer ${secrets[1]}\nretry permitted`,
+      `X-API-Key='${secrets[2]}' operation=inspect`,
+      `{"Cookie":"session=${secrets[3]}","result":"complete"}`,
+    ]);
+    const text = JSON.stringify(result);
+
+    for (const secret of secrets) expect(text).not.toContain(secret);
+    expect(text).toContain("status");
+    expect(text).toContain("retry permitted");
+    expect(text).toContain("operation=inspect");
+    expect(text).toContain("complete");
+  });
 });

@@ -42,40 +42,40 @@ export class YtptubeClient {
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
-    let response: Response;
     try {
-      response = await this.fetchImpl(url, {
+      const response = await this.fetchImpl(url, {
         method: options.method ?? "GET",
         headers,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         signal: controller.signal,
       });
+
+      const contentType = response.headers.get("content-type") ?? "";
+      // A conforming fetch returns a fresh Response. Tolerate reused test/custom-fetch
+      // responses so transport adapters cannot turn a successful empty reply into a crash.
+      const text = response.bodyUsed ? "" : await response.text();
+      let payload: unknown = text;
+      if (contentType.includes("json") || text.trim().startsWith("{") || text.trim().startsWith("[")) {
+        try {
+          payload = text ? JSON.parse(text) : null;
+        } catch {
+          if (response.ok) throw new YtptubeApiError("YTPTube returned invalid JSON", response.status, "INVALID_RESPONSE");
+        }
+      }
+      if (!response.ok) {
+        const data = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        const message = typeof data.error === "string" ? data.error : `YTPTube request failed with HTTP ${response.status}`;
+        throw new YtptubeApiError(message, response.status, typeof data.code === "string" ? data.code : undefined, data.detail);
+      }
+      return payload;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         throw new YtptubeApiError("YTPTube request timed out", undefined, "TIMEOUT");
       }
+      if (error instanceof YtptubeApiError) throw error;
       throw new YtptubeApiError("YTPTube request failed", undefined, "TRANSPORT_ERROR");
     } finally {
       clearTimeout(timer);
     }
-
-    const contentType = response.headers.get("content-type") ?? "";
-    // A conforming fetch returns a fresh Response. Tolerate reused test/custom-fetch
-    // responses so transport adapters cannot turn a successful empty reply into a crash.
-    const text = response.bodyUsed ? "" : await response.text();
-    let payload: unknown = text;
-    if (contentType.includes("json") || text.trim().startsWith("{") || text.trim().startsWith("[")) {
-      try {
-        payload = text ? JSON.parse(text) : null;
-      } catch {
-        if (response.ok) throw new YtptubeApiError("YTPTube returned invalid JSON", response.status, "INVALID_RESPONSE");
-      }
-    }
-    if (!response.ok) {
-      const data = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
-      const message = typeof data.error === "string" ? data.error : `YTPTube request failed with HTTP ${response.status}`;
-      throw new YtptubeApiError(message, response.status, typeof data.code === "string" ? data.code : undefined, data.detail);
-    }
-    return payload;
   }
 }

@@ -97,4 +97,36 @@ describe("YtptubeClient", () => {
       code: "TRANSPORT_ERROR",
     });
   });
+
+  it("keeps the timeout active while consuming the response body", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => ({
+        bodyUsed: false,
+        headers: new Headers({ "content-type": "application/json" }),
+        ok: true,
+        status: 200,
+        text: () => new Promise<string>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const error = new Error("body read aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        }),
+      }) as Response);
+      const client = new YtptubeClient(config({ timeoutMs: 10 }), fetchImpl);
+
+      const request = client.request("history");
+      const timedOut = expect(request).rejects.toMatchObject({
+        name: "YtptubeApiError",
+        message: "YTPTube request timed out",
+        code: "TIMEOUT",
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      await timedOut;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
