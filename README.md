@@ -42,7 +42,7 @@ the queue and history, update tasks and presets, and generate metadata.
 
 ### Prerequisites
 
-- Node.js 20 or newer.
+- Node.js `^20.19.0` or `>=22.12.0`.
 - A reachable self-hosted ytptube HTTP API.
 - An MCP-compatible client, such as Codex or Claude Desktop.
 
@@ -185,6 +185,9 @@ request before contacting ytptube.
   update inputs reject arbitrary configuration and cookies.
 
 ## Development
+
+Install [`prek`](https://prek.j178.dev/installation/) before running the
+repository's development and dependency-update scripts.
 
 ```sh
 # Install dependencies, type-check, test, and build.
