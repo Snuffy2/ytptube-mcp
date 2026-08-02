@@ -9,6 +9,7 @@ type Input = Record<string, unknown>;
 type ToolHandler = (input: Input) => Promise<unknown>;
 
 const id = z.union([z.string().min(1), z.number().int().nonnegative()]);
+const numericId = z.number().int().positive();
 const ids = z.array(z.string().min(1)).min(1);
 const page = z.number().int().min(1).optional();
 const perPage = z.number().int().min(1).max(200).optional();
@@ -23,20 +24,29 @@ const download = z.object({
   auto_start: z.boolean().optional(),
   extras: arbitraryObject.optional(),
 });
-const task = z.object({
-  name: z.string().min(1).optional(),
+const taskFields = {
+  name: z.string().trim().min(1),
   url: z.string().url(),
   timer: z.string().optional(),
   preset: z.string().optional(),
   folder: z.string().optional(),
-  cookies: z.string().optional(),
-  config: arbitraryObject.optional(),
   template: z.string().optional(),
   cli: z.string().optional(),
   auto_start: z.boolean().optional(),
   handler_enabled: z.boolean().optional(),
   enabled: z.boolean().optional(),
-});
+};
+const taskCreate = z.object(taskFields).strict();
+const subsequentTaskCreate = z.object({ ...taskFields, name: taskFields.name.optional() }).strict();
+const taskCreatePayload = z.union([
+  taskCreate,
+  z.tuple([taskCreate]).rest(subsequentTaskCreate),
+]);
+const taskPatch = z.object({
+  ...taskFields,
+  name: taskFields.name.optional(),
+  url: taskFields.url.optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "changes must not be empty");
 const preset = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -145,37 +155,39 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_set_history_archive", "Archive or unarchive a history item using its configured archive file.", {
     id, archived: z.boolean(),
   }, ({ id, archived }) => call(`/api/history/${pathId(id)}/archive`, { method: archived ? "POST" : "DELETE" }), true);
-  register("ytptube_generate_task_metadata", "Generate task metadata, NFO, and image sidecar files.", { id }, ({ id }) => call(`/api/tasks/${pathId(id)}/metadata`, { method: "POST" }), true);
+  register("ytptube_generate_task_metadata", "Generate task metadata, NFO, and image sidecar files.", { id }, ({ id }) => call(`/api/tasks/${pathId(numericId.parse(id))}/metadata`, { method: "POST" }), true);
   register("ytptube_generate_history_nfo", "Generate an NFO sidecar for a completed history item.", {
     id, type: z.enum(["tv", "movie"]).default("tv"), overwrite: z.boolean().default(false),
   }, ({ id, type, overwrite }) => call(`/api/history/${pathId(id)}/nfo`, { method: "POST", body: { type, overwrite } }), true);
 
   register("ytptube_list_tasks", "List scheduled tasks with pagination.", { page, per_page: perPage }, (input) => call("/api/tasks", { query: input as RequestOptions["query"] }));
-  register("ytptube_get_task", "Read a scheduled task by ID.", { id }, ({ id }) => call(`/api/tasks/${pathId(id)}`));
+  register("ytptube_get_task", "Read a scheduled task by numeric ID.", { id: numericId }, ({ id }) => call(`/api/tasks/${pathId(id)}`));
   register("ytptube_inspect_task_url", "Preview the task handler and items for a URL; this only calls /api/tasks/inspect and never queues downloads.", {
     url: z.string().url(), preset: z.string().optional(), handler: z.string().optional(), static_only: z.boolean().default(false),
   }, (input) => call("/api/tasks/inspect", { method: "POST", body: input }));
   register("ytptube_create_tasks", "Create one or more scheduled tasks.", {
-    tasks: z.union([task, z.array(task).min(1)]),
-  }, ({ tasks }) => call("/api/tasks", { method: "POST", body: tasks }), true);
+    // Keep mutation-gate errors deterministic even for incomplete payloads;
+    // the endpoint-specific contract is parsed after the local gate.
+    tasks: z.union([arbitraryObject, z.array(arbitraryObject).min(1)]),
+  }, ({ tasks }) => call("/api/tasks", { method: "POST", body: taskCreatePayload.parse(tasks) }), true);
   register("ytptube_patch_task", "Partially update a scheduled task.", {
-    id, changes: task.partial().refine((value) => Object.keys(value).length > 0, "changes must not be empty"),
-  }, ({ id, changes }) => call(`/api/tasks/${pathId(id)}`, { method: "PATCH", body: changes }), true);
+    id, changes: taskPatch,
+  }, ({ id, changes }) => call(`/api/tasks/${pathId(numericId.parse(id))}`, { method: "PATCH", body: changes }), true);
   register("ytptube_update_task", "Replace a scheduled task using the API PUT contract.", {
-    id, task,
-  }, ({ id, task }) => call(`/api/tasks/${pathId(id)}`, { method: "PUT", body: task }), true);
+    id, task: arbitraryObject,
+  }, ({ id, task }) => call(`/api/tasks/${pathId(numericId.parse(id))}`, { method: "PUT", body: taskCreate.parse(task) }), true);
 
   register("ytptube_list_presets", "List download presets with pagination and sorting.", {
     page, per_page: perPage, sort: z.string().optional(), order: z.string().optional(), exclude_defaults: z.boolean().optional(),
   }, (input) => call("/api/presets", { query: input as RequestOptions["query"] }));
-  register("ytptube_get_preset", "Read a download preset by ID.", { id }, ({ id }) => call(`/api/presets/${pathId(id)}`));
+  register("ytptube_get_preset", "Read a download preset by numeric ID.", { id: numericId }, ({ id }) => call(`/api/presets/${pathId(id)}`));
   register("ytptube_create_preset", "Create a download preset.", { preset }, ({ preset }) => call("/api/presets", { method: "POST", body: preset }), true);
   register("ytptube_patch_preset", "Partially update a non-default download preset.", {
     id, changes: preset.partial().refine((value) => Object.keys(value).length > 0, "changes must not be empty"),
-  }, ({ id, changes }) => call(`/api/presets/${pathId(id)}`, { method: "PATCH", body: changes }), true);
+  }, ({ id, changes }) => call(`/api/presets/${pathId(numericId.parse(id))}`, { method: "PATCH", body: changes }), true);
   register("ytptube_update_preset", "Replace a non-default download preset using the API PUT contract.", {
     id, preset,
-  }, ({ id, preset }) => call(`/api/presets/${pathId(id)}`, { method: "PUT", body: preset }), true);
+  }, ({ id, preset }) => call(`/api/presets/${pathId(numericId.parse(id))}`, { method: "PUT", body: preset }), true);
 
   return server;
 }

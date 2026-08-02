@@ -34,7 +34,9 @@ export class YtptubeClient {
     const headers = new Headers({ Accept: "application/json" });
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
     if (this.config.username !== undefined && this.config.password !== undefined) {
-      const credential = Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64url");
+      // YTPTube decodes both transports with Python's standard b64decode. Keep
+      // padding and the standard alphabet; URLSearchParams safely escapes it.
+      const credential = Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64");
       if (this.config.authMode === "apikey") url.searchParams.set("apikey", credential);
       else headers.set("Authorization", `Basic ${credential}`);
     }
