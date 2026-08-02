@@ -6,7 +6,7 @@ const SERIALIZED_SECRET = /((["'])(?:password|token|access[_-]?token|refresh[_-]
 const SECRET_ASSIGNMENT = /(\b(?:password|token|access[_-]?token|refresh[_-]?token|secret|api[ _-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&#"'<>}\]]+)/gi;
 const ESCAPED_SERIALIZED_HEADER_START = /((\\["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(\\["']))/gi;
 const SERIALIZED_HEADER_START = /((["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(["']))/gi;
-const AUTHORIZATION_HEADER = /(^|[\r\n])((?:proxy-authorization|authorization)\s*[:=]\s*)[^\r\n]*/gim;
+const AUTHORIZATION_HEADER = /(\b(?:proxy-authorization|authorization)\s*[:=]\s*)[^\r\n]*/gi;
 const API_KEY_HEADER = /(\bx-api-key\s*[:=]\s*(?:["'])?)[^\s,"'<>}\]]+/gi;
 const COOKIE_HEADER = /(\b(?:set-cookie|cookie)\s*[:=]\s*)[^\r\n]*/gi;
 
@@ -57,7 +57,7 @@ function redactString(value: string): string {
     .replace(ESCAPED_SERIALIZED_SECRET, "$1[REDACTED]$4")
     .replace(SERIALIZED_SECRET, "$1[REDACTED]$4")
     .replace(SECRET_ASSIGNMENT, "$1[REDACTED]")
-    .replace(AUTHORIZATION_HEADER, "$1$2[REDACTED]")
+    .replace(AUTHORIZATION_HEADER, "$1[REDACTED]")
     .replace(API_KEY_HEADER, "$1[REDACTED]")
     .replace(COOKIE_HEADER, "$1[REDACTED]");
 }

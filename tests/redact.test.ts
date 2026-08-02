@@ -120,6 +120,24 @@ describe("redact", () => {
 
   it.each([
     [
+      "request failed with Authorization: Bearer bearer-secret",
+      "request failed with Authorization: [REDACTED]",
+      "bearer-secret",
+    ],
+    [
+      'proxy rejected Proxy-Authorization: Digest username="proxy-user", response="proxy-secret"',
+      "proxy rejected Proxy-Authorization: [REDACTED]",
+      "proxy-secret",
+    ],
+  ])("redacts inline plaintext authorization headers", (diagnostic, expected, credential) => {
+    const result = String(redact(diagnostic));
+
+    expect(result).toBe(expected);
+    expect(result).not.toContain(credential);
+  });
+
+  it.each([
+    [
       "Authorization",
       'Digest username="alice", realm="private area", nonce="n,once", response="credential-secret"',
     ],
