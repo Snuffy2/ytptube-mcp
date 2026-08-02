@@ -114,8 +114,31 @@ describe("redact", () => {
 
   it("redacts authorization credentials for schemes other than Basic and Bearer", () => {
     expect(redact("Authorization: Digest secret\nrequest failed")).toBe(
-      "Authorization: Digest [REDACTED]\nrequest failed",
+      "Authorization: [REDACTED]\nrequest failed",
     );
+  });
+
+  it.each([
+    [
+      "Authorization",
+      'Digest username="alice", realm="private area", nonce="n,once", response="credential-secret"',
+    ],
+    [
+      "Authorization",
+      'Digest username="alice smith", response="credential with spaces"',
+    ],
+    [
+      "Proxy-Authorization",
+      'Digest username="proxy-user", realm="proxy, realm", response="proxy-secret"',
+    ],
+  ])("redacts the complete plaintext %s value", (header, credential) => {
+    const result = String(redact(`${header}: ${credential}\nfollowing line remains`));
+
+    expect(result).toBe(`${header}: [REDACTED]\nfollowing line remains`);
+    expect(result).not.toContain(credential);
+    for (const value of credential.match(/"([^"]*)"/g) ?? []) {
+      expect(result).not.toContain(value.slice(1, -1));
+    }
   });
 
   it("redacts equals-delimited cookie diagnostics", () => {

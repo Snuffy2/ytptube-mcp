@@ -56,6 +56,10 @@ const preset = z.object({
   template: z.string().optional(),
   cookies: z.string().optional(),
 }).strict();
+const presetPatch = preset.partial().refine(
+  (value) => Object.keys(value).length > 0,
+  "changes must not be empty",
+);
 
 function result(value: unknown, isError = false) {
   return { content: [{ type: "text" as const, text: JSON.stringify(redact(value), null, 2) }], isError };
@@ -127,11 +131,10 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_get_history_item", "Read one queue or history item by ID.", { id }, ({ id }) => call(`/api/history/${pathId(id)}`));
 
   register("ytptube_add_downloads", "Add one or more URLs to the download queue.", {
-    // Parse the endpoint contract after the local mutation gate.
-    items: z.union([arbitraryObject, z.array(arbitraryObject).min(1)]),
+    items: z.union([download, z.array(download).min(1)]),
   }, ({ items }) => call("/api/history", {
     method: "POST",
-    body: z.union([download, z.array(download).min(1)]).parse(items),
+    body: items,
   }), true);
   register("ytptube_retry_history_item", "Read a history item and requeue only saved download-request fields.", { id }, async ({ id }) => {
     const stored = await call(`/api/history/${pathId(id)}`) as Record<string, unknown>;
@@ -171,34 +174,32 @@ export function createServer(config: Config, client = new YtptubeClient(config))
     url: httpUrl, preset: z.string().optional(), handler: z.string().optional(), static_only: z.boolean().default(false),
   }, (input) => call("/api/tasks/inspect", { method: "POST", body: input }));
   register("ytptube_create_tasks", "Create one or more scheduled tasks.", {
-    // Keep mutation-gate errors deterministic even for incomplete payloads;
-    // the endpoint-specific contract is parsed after the local gate.
-    tasks: z.union([arbitraryObject, z.array(arbitraryObject).min(1)]),
-  }, ({ tasks }) => call("/api/tasks", { method: "POST", body: taskCreatePayload.parse(tasks) }), true);
+    tasks: taskCreatePayload,
+  }, ({ tasks }) => call("/api/tasks", { method: "POST", body: tasks }), true);
   register("ytptube_patch_task", "Partially update a scheduled task.", {
-    id: numericId, changes: arbitraryObject,
+    id: numericId, changes: taskPatch,
   }, ({ id, changes }) => call(`/api/tasks/${pathId(id)}`, {
     method: "PATCH",
-    body: taskPatch.parse(changes),
+    body: changes,
   }), true);
   register("ytptube_update_task", "Replace a scheduled task using the API PUT contract.", {
-    id: numericId, task: arbitraryObject,
-  }, ({ id, task }) => call(`/api/tasks/${pathId(id)}`, { method: "PUT", body: taskCreate.parse(task) }), true);
+    id: numericId, task: taskCreate,
+  }, ({ id, task }) => call(`/api/tasks/${pathId(id)}`, { method: "PUT", body: task }), true);
 
   register("ytptube_list_presets", "List download presets with pagination and sorting.", {
     page, per_page: perPage, sort: z.string().optional(), order: z.string().optional(), exclude_defaults: z.boolean().optional(),
   }, (input) => call("/api/presets", { query: input as RequestOptions["query"] }));
   register("ytptube_get_preset", "Read a download preset by numeric ID.", { id: numericId }, ({ id }) => call(`/api/presets/${pathId(id)}`));
-  register("ytptube_create_preset", "Create a download preset.", { preset: arbitraryObject }, ({ preset: input }) => call("/api/presets", { method: "POST", body: preset.parse(input) }), true);
+  register("ytptube_create_preset", "Create a download preset.", { preset }, ({ preset: input }) => call("/api/presets", { method: "POST", body: input }), true);
   register("ytptube_patch_preset", "Partially update a non-default download preset.", {
-    id: numericId, changes: arbitraryObject,
+    id: numericId, changes: presetPatch,
   }, ({ id, changes }) => call(`/api/presets/${pathId(id)}`, {
     method: "PATCH",
-    body: preset.partial().refine((value) => Object.keys(value).length > 0, "changes must not be empty").parse(changes),
+    body: changes,
   }), true);
   register("ytptube_update_preset", "Replace a non-default download preset using the API PUT contract.", {
-    id: numericId, preset: arbitraryObject,
-  }, ({ id, preset: input }) => call(`/api/presets/${pathId(id)}`, { method: "PUT", body: preset.parse(input) }), true);
+    id: numericId, preset,
+  }, ({ id, preset: input }) => call(`/api/presets/${pathId(id)}`, { method: "PUT", body: input }), true);
 
   return server;
 }

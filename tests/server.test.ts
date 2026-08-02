@@ -60,8 +60,8 @@ describe("YTPTube MCP tools", () => {
       ["ytptube_clear_history", { type: "done", ids: ["7"] }],
       ["ytptube_set_history_archive", { id: "7", archived: true }],
       ["ytptube_generate_task_metadata", { id: 7 }],
-      ["ytptube_generate_history_nfo", { id: "7" }],
-      ["ytptube_create_tasks", { tasks: { url: "https://video.test/watch/1" } }],
+      ["ytptube_generate_history_nfo", { id: 7 }],
+      ["ytptube_create_tasks", { tasks: { name: "task", url: "https://video.test/watch/1" } }],
       [
         "ytptube_patch_task",
         { id: 7, changes: { url: "https://video.test/watch/2" } },
@@ -198,7 +198,7 @@ describe("YTPTube MCP tools", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it("keeps mutation-disabled rejection ahead of raw CLI contract validation", async () => {
+  it("rejects raw CLI input with mutations disabled without a request", async () => {
     const { client, request } = await harness(false);
 
     const response = await client.callTool({
@@ -206,7 +206,7 @@ describe("YTPTube MCP tools", () => {
       arguments: { preset: { name: "audio", cli: "--exec unsafe" } },
     });
 
-    expect(text(response)).toContain("MUTATIONS_DISABLED");
+    expect(response.isError).toBe(true);
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -263,6 +263,46 @@ describe("YTPTube MCP tools", () => {
     expect(taskSchemaText).not.toContain('"config"');
   });
 
+  it("publishes the strict nested mutation payload contracts", async () => {
+    const { client } = await harness(false);
+    const tools = await client.listTools();
+    const schemaText = (name: string): string => JSON.stringify(
+      tools.tools.find((tool) => tool.name === name)?.inputSchema,
+    );
+
+    const downloads = schemaText("ytptube_add_downloads");
+    expect(downloads).toContain('"required":["url"]');
+    for (const field of ["url", "preset", "folder", "cookies", "template", "auto_start", "extras"]) {
+      expect(downloads).toContain(`"${field}"`);
+    }
+
+    const tasks = [
+      schemaText("ytptube_create_tasks"),
+      schemaText("ytptube_patch_task"),
+      schemaText("ytptube_update_task"),
+    ];
+    expect(tasks[0]).toContain('"required":["name","url"]');
+    for (const schema of tasks) {
+      for (const field of ["name", "url", "timer", "preset", "folder", "template", "auto_start", "handler_enabled", "enabled"]) {
+        expect(schema).toContain(`"${field}"`);
+      }
+    }
+
+    const presets = [
+      schemaText("ytptube_create_preset"),
+      schemaText("ytptube_patch_preset"),
+      schemaText("ytptube_update_preset"),
+    ];
+    expect(presets[0]).toContain('"required":["name"]');
+    expect(presets[2]).toContain('"required":["name"]');
+    for (const schema of presets) {
+      for (const field of ["name", "description", "folder", "template", "cookies"]) {
+        expect(schema).toContain(`"${field}"`);
+      }
+      expect(schema).not.toContain('"cli"');
+    }
+  });
+
   it.each(["ytptube_get_task", "ytptube_get_preset"])(
     "rejects string IDs for %s without sending a request",
     async (name) => {
@@ -304,7 +344,7 @@ describe("YTPTube MCP tools", () => {
     },
   );
 
-  it("keeps mutation gating ahead of handler payload validation", async () => {
+  it("rejects invalid disabled-mutation payloads without a request", async () => {
     const { client, request } = await harness(false);
 
     for (const [name, arguments_] of [
@@ -314,7 +354,7 @@ describe("YTPTube MCP tools", () => {
       ["ytptube_update_task", { id: 7, task: { url: "not-a-url" } }],
     ] as const) {
       const blocked = await client.callTool({ name, arguments: arguments_ });
-      expect(text(blocked), name).toContain("MUTATIONS_DISABLED");
+      expect(blocked.isError, name).toBe(true);
     }
     expect(request).not.toHaveBeenCalled();
   });
