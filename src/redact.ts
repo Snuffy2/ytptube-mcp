@@ -1,9 +1,10 @@
-const SENSITIVE_KEY = /(cookie|password|token|secret|authorization|api[ _-]?key)/i;
+const SECRET_KEY_NAME = String.raw`(?:password|token|access[_-]?token|refresh[_-]?token|secret|api[ _-]?key|cookies|credentials?|auth|basic[_-]?auth)`;
+const SENSITIVE_KEY = /(?:cookie|password|token|secret|authorization|api[ _-]?key|credentials?|^auth$|^basic[_-]?auth$)/i;
 const APIKEY_QUERY = /([?&]apikey=)[^&#\s"'<>]*/gi;
 const HTTP_URL_USERINFO = /(\bhttps?:\/\/)[^/?#\s"'<>]+@/gi;
-const ESCAPED_SERIALIZED_SECRET = /((\\["'])(?:password|token|access[_-]?token|refresh[_-]?token|secret|api[ _-]?key|cookies)\2\s*:\s*(\\["']))(?:\\\\.|(?!\3)[\s\S])*(\3)/gi;
-const SERIALIZED_SECRET = /((["'])(?:password|token|access[_-]?token|refresh[_-]?token|secret|api[ _-]?key|cookies)\2\s*:\s*(["']))(?:\\.|(?!\3)[\s\S])*(\3)/gi;
-const SECRET_ASSIGNMENT = /(\b(?:password|token|access[_-]?token|refresh[_-]?token|secret|api[ _-]?key|cookies)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&#"'<>}\]]+)/gi;
+const ESCAPED_SERIALIZED_SECRET = new RegExp(`((\\\\["'])${SECRET_KEY_NAME}\\2\\s*:\\s*(\\\\["']))(?:\\\\\\\\.|(?!\\3)[\\s\\S])*(\\3)`, "gi");
+const SERIALIZED_SECRET = new RegExp(`((["'])${SECRET_KEY_NAME}\\2\\s*:\\s*(["']))(?:\\\\.|(?!\\3)[\\s\\S])*(\\3)`, "gi");
+const SECRET_ASSIGNMENT = new RegExp(`(\\b${SECRET_KEY_NAME}\\b\\s*[:=]\\s*)(?:"[^"]*"|'[^']*'|[^\\s,;&#"'<>}\\]]+)`, "gi");
 const ESCAPED_SERIALIZED_HEADER_START = /((\\["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(\\["']))/gi;
 const SERIALIZED_HEADER_START = /((["'])(?:authorization|proxy-authorization|x-api-key|set-cookie|cookie)\2\s*:\s*(["']))/gi;
 const AUTHORIZATION_HEADER = /(\b(?:proxy-authorization|authorization)\s*[:=]\s*)[^\r\n]*/gi;

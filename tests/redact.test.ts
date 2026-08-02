@@ -190,6 +190,10 @@ describe("redact", () => {
     ["access_token", "access-token-secret"],
     ["refresh_token", "refresh-token-secret"],
     ["secret", "generic-secret"],
+    ["credential", "single-credential-secret"],
+    ["credentials", "plural-credentials-secret"],
+    ["auth", "auth-secret"],
+    ["basic_auth", "basic-auth-secret"],
   ])("redacts %s assignments and serialized values in strings", (key, credential) => {
     const result = redact([
       `worker failed: ${key}=${credential} retry permitted`,
@@ -204,5 +208,21 @@ describe("redact", () => {
     expect(text).toContain("status");
     expect(text).toContain("complete");
     expect(text).toContain("limit=5");
+  });
+
+  it("redacts credential aliases as structured keys while preserving safe fields", () => {
+    expect(redact({
+      credential: "one",
+      credentials: { username: "worker", password: "two" },
+      auth: "three",
+      basic_auth: "four",
+      status: "safe",
+    })).toEqual({
+      credential: "[REDACTED]",
+      credentials: "[REDACTED]",
+      auth: "[REDACTED]",
+      basic_auth: "[REDACTED]",
+      status: "safe",
+    });
   });
 });

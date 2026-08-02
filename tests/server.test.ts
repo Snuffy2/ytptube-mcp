@@ -136,7 +136,7 @@ describe("YTPTube MCP tools", () => {
         cookies: "private-cookie",
         template: "%(title)s",
         cli: "--no-playlist",
-        extras: { write_thumbnail: true },
+        extras: { ignore_conditions: ["has_archive"] },
         auto_start: false,
         status: "error",
         created_at: "yesterday",
@@ -161,11 +161,76 @@ describe("YTPTube MCP tools", () => {
           folder: "/media",
           cookies: "private-cookie",
           template: "%(title)s",
-          extras: { write_thumbnail: true },
+          extras: { ignore_conditions: ["has_archive"] },
           auto_start: false,
         },
       },
     ]);
+  });
+
+  it("preserves only documented download extras and rejects arbitrary or raw CLI extras", async () => {
+    const { client, request } = await harness(true);
+
+    await client.callTool({
+      name: "ytptube_add_downloads",
+      arguments: {
+        items: {
+          url: "https://video.test/watch/1",
+          extras: { ignore_conditions: ["has_archive", "*"] },
+        },
+      },
+    });
+    expect(request).toHaveBeenCalledWith("/api/history", {
+      method: "POST",
+      body: {
+        url: "https://video.test/watch/1",
+        extras: { ignore_conditions: ["has_archive", "*"] },
+      },
+    });
+
+    request.mockClear();
+    for (const extras of [
+      { cli: "--exec unsafe" },
+      { args: ["--exec", "unsafe"] },
+      { nested: { cli: "unsafe" } },
+      { ignore_conditions: [], cli: "--exec unsafe" },
+      { ignore_conditions: [] },
+      { ignore_conditions: [""] },
+    ]) {
+      const response = await client.callTool({
+        name: "ytptube_add_downloads",
+        arguments: { items: { url: "https://video.test/watch/1", extras } },
+      });
+      expect(response.isError).toBe(true);
+    }
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("accepts numeric bulk history IDs and normalizes both write payloads to strings", async () => {
+    const { client, request } = await harness(true);
+
+    await client.callTool({
+      name: "ytptube_queue_control",
+      arguments: { action: "front", ids: [0, 7, "9"] },
+    });
+    expect(request).toHaveBeenLastCalledWith("/api/history/position", {
+      method: "POST",
+      body: { ids: ["0", "7", "9"], position: "front" },
+    });
+
+    await client.callTool({
+      name: "ytptube_clear_history",
+      arguments: { type: "done", ids: [0, 7, "9"] },
+    });
+    expect(request).toHaveBeenLastCalledWith("/api/history", {
+      method: "DELETE",
+      body: {
+        type: "done",
+        ids: ["0", "7", "9"],
+        status: undefined,
+        remove_file: false,
+      },
+    });
   });
 
   it.each([

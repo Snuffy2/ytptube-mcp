@@ -10,10 +10,12 @@ type ToolHandler = (input: Input) => Promise<unknown>;
 
 const id = z.union([z.string().min(1), z.number().int().nonnegative()]);
 const numericId = z.number().int().positive();
-const ids = z.array(z.string().min(1)).min(1);
+const ids = z.array(id).min(1);
 const page = z.number().int().min(1).optional();
 const perPage = z.number().int().min(1).max(200).optional();
-const arbitraryObject = z.record(z.unknown());
+const downloadExtras = z.object({
+  ignore_conditions: z.array(z.string().min(1)).min(1),
+}).strict();
 const httpUrl = z.string().url().refine((value) => {
   const protocol = new URL(value).protocol;
   return protocol === "http:" || protocol === "https:";
@@ -25,7 +27,7 @@ const download = z.object({
   cookies: z.string().optional(),
   template: z.string().optional(),
   auto_start: z.boolean().optional(),
-  extras: arbitraryObject.optional(),
+  extras: downloadExtras.optional(),
 }).strict();
 const taskFields = {
   name: z.string().trim().min(1),
@@ -147,15 +149,24 @@ export function createServer(config: Config, client = new YtptubeClient(config))
     action: z.enum(["start", "pause", "force-start", "front", "back", "cancel"]), ids,
   }, ({ action, ids }) => {
     const position = action === "front" || action === "back";
+    const normalizedIds = (ids as Array<string | number>).map(String);
     return call(position ? "/api/history/position" : `/api/history/${action}`, {
-      method: "POST", body: position ? { ids, position: action } : { ids },
+      method: "POST", body: position ? { ids: normalizedIds, position: action } : { ids: normalizedIds },
     });
   }, true, true);
   register("ytptube_clear_history", "Delete queue/history records selected by IDs or a status filter; media deletion is opt-in.", {
-    type: z.enum(["queue", "done"]), ids: z.array(z.string().min(1)).min(1).optional(), status: z.string().min(1).optional(), delete_media: z.boolean().default(false),
+    type: z.enum(["queue", "done"]), ids: ids.optional(), status: z.string().min(1).optional(), delete_media: z.boolean().default(false),
   }, ({ type, ids, status, delete_media }) => {
     if ((ids === undefined) === (status === undefined)) throw new Error("Provide exactly one of ids or status");
-    return call("/api/history", { method: "DELETE", body: { type, ids, status, remove_file: delete_media } });
+    return call("/api/history", {
+      method: "DELETE",
+      body: {
+        type,
+        ids: Array.isArray(ids) ? (ids as Array<string | number>).map(String) : undefined,
+        status,
+        remove_file: delete_media,
+      },
+    });
   }, true, true);
   register("ytptube_list_archive", "List archive entries for a preset, optionally filtered by archive IDs.", {
     preset: z.string().min(1), ids: z.array(z.string().min(1)).optional(),

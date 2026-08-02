@@ -67,6 +67,7 @@ This gate covers adds and retries, queue actions, history clearing, archive muta
 - Download and task URLs, including inspection inputs, must use HTTP or HTTPS.
 - Global yt-dlp options are available through the documented API as read-only data. This server does not write global options.
 - Write tools do not accept raw yt-dlp CLI strings. `ytptube_validate_cli_options` remains available only as a read-only parser and validator; it does not start downloads.
+- Download `extras` accepts only `ignore_conditions`, which must be a non-empty array of non-empty condition-name strings; use `"*"` to ignore all conditions.
 - Per-download authentication and settings belong in preset inputs, not task create/update. A task can select a preset, but task create/update rejects `cookies` and arbitrary `config` fields.
 - File browser/streaming, terminal or system administration, global configuration writes, notifications, task/preset deletion, and SSE are intentionally outside this server’s scope.
 
