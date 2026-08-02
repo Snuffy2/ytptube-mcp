@@ -2,7 +2,24 @@
   "name": "ytptube-mcp",
   "version": "0.1.0",
   "description": "Model Context Protocol server for a self-hosted YTPTube instance",
-  "private": true,
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ytptube",
+    "yt-dlp"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Snuffy2/ytptube-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Snuffy2/ytptube-mcp/issues"
+  },
+  "homepage": "https://github.com/Snuffy2/ytptube-mcp#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "ytptube-mcp": "dist/index.js"

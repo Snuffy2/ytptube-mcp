@@ -46,7 +46,16 @@ the queue and history, update tasks and presets, and generate metadata.
 - A reachable self-hosted ytptube HTTP API.
 - An MCP-compatible client, such as Codex or Claude Desktop.
 
-### Install and build
+### Install from npm
+
+```sh
+npm install --global ytptube-mcp
+```
+
+This makes the `ytptube-mcp` command available on your `PATH`. Configure the
+server through your MCP client's environment, as shown below.
+
+### Install from source
 
 ```sh
 git clone https://github.com/Snuffy2/ytptube-mcp.git
@@ -66,13 +75,12 @@ directory. Explicit environment variables take precedence over `.env`.
 
 ## Configure your MCP client
 
-Point your client at the built entry point and keep values specific to your
-ytptube instance in its environment configuration:
+Use the npm-installed command and keep values specific to your ytptube instance
+in its environment configuration:
 
 ```toml
 [mcp_servers.ytptube]
-command = "node"
-args = ["/absolute/path/to/ytptube-mcp/dist/index.js"]
+command = "ytptube-mcp"
 
 [mcp_servers.ytptube.env]
 YTPTUBE_BASE_URL = "https://media.example.net/ytptube"
@@ -82,8 +90,9 @@ YTPTUBE_ALLOW_MUTATIONS = "false"
 # YTPTUBE_PASSWORD = "your-password"
 ```
 
-Replace the path and base URL with values for your checkout and API. Do not
-commit actual credentials or store them in shared shell history.
+For a source checkout instead, set `command = "node"` and use the absolute path
+to its built `dist/index.js` as the sole `args` entry. Do not commit actual
+credentials or store them in shared shell history.
 
 ### Environment variables
 
