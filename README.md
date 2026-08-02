@@ -66,6 +66,7 @@ This gate covers adds and retries, queue actions, history clearing, archive muta
 - Task URL inspection is a preview; the ytptube API does not provide a scheduled-task “run now” endpoint.
 - Download and task URLs, including inspection inputs, must use HTTP or HTTPS.
 - Global yt-dlp options are available through the documented API as read-only data. This server does not write global options.
+- Write tools do not accept raw yt-dlp CLI strings. `ytptube_validate_cli_options` remains available only as a read-only parser and validator; it does not start downloads.
 - Per-download authentication and settings belong in preset inputs, not task create/update. A task can select a preset, but task create/update rejects `cookies` and arbitrary `config` fields.
 - File browser/streaming, terminal or system administration, global configuration writes, notifications, task/preset deletion, and SSE are intentionally outside this server’s scope.
 

@@ -24,10 +24,9 @@ const download = z.object({
   folder: z.string().optional(),
   cookies: z.string().optional(),
   template: z.string().optional(),
-  cli: z.string().optional(),
   auto_start: z.boolean().optional(),
   extras: arbitraryObject.optional(),
-});
+}).strict();
 const taskFields = {
   name: z.string().trim().min(1),
   url: httpUrl,
@@ -35,7 +34,6 @@ const taskFields = {
   preset: z.string().optional(),
   folder: z.string().optional(),
   template: z.string().optional(),
-  cli: z.string().optional(),
   auto_start: z.boolean().optional(),
   handler_enabled: z.boolean().optional(),
   enabled: z.boolean().optional(),
@@ -57,8 +55,7 @@ const preset = z.object({
   folder: z.string().optional(),
   template: z.string().optional(),
   cookies: z.string().optional(),
-  cli: z.string().optional(),
-});
+}).strict();
 
 function result(value: unknown, isError = false) {
   return { content: [{ type: "text" as const, text: JSON.stringify(redact(value), null, 2) }], isError };
@@ -138,7 +135,7 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   }), true);
   register("ytptube_retry_history_item", "Read a history item and requeue only saved download-request fields.", { id }, async ({ id }) => {
     const stored = await call(`/api/history/${pathId(id)}`) as Record<string, unknown>;
-    const allowed = ["url", "preset", "folder", "cookies", "template", "cli", "extras", "auto_start"] as const;
+    const allowed = ["url", "preset", "folder", "cookies", "template", "extras", "auto_start"] as const;
     const body = Object.fromEntries(allowed.filter((key) => stored[key] !== undefined).map((key) => [key, stored[key]]));
     download.parse(body);
     return call("/api/history", { method: "POST", body });
@@ -192,13 +189,16 @@ export function createServer(config: Config, client = new YtptubeClient(config))
     page, per_page: perPage, sort: z.string().optional(), order: z.string().optional(), exclude_defaults: z.boolean().optional(),
   }, (input) => call("/api/presets", { query: input as RequestOptions["query"] }));
   register("ytptube_get_preset", "Read a download preset by numeric ID.", { id: numericId }, ({ id }) => call(`/api/presets/${pathId(id)}`));
-  register("ytptube_create_preset", "Create a download preset.", { preset }, ({ preset }) => call("/api/presets", { method: "POST", body: preset }), true);
+  register("ytptube_create_preset", "Create a download preset.", { preset: arbitraryObject }, ({ preset: input }) => call("/api/presets", { method: "POST", body: preset.parse(input) }), true);
   register("ytptube_patch_preset", "Partially update a non-default download preset.", {
-    id: numericId, changes: preset.partial().refine((value) => Object.keys(value).length > 0, "changes must not be empty"),
-  }, ({ id, changes }) => call(`/api/presets/${pathId(id)}`, { method: "PATCH", body: changes }), true);
+    id: numericId, changes: arbitraryObject,
+  }, ({ id, changes }) => call(`/api/presets/${pathId(id)}`, {
+    method: "PATCH",
+    body: preset.partial().refine((value) => Object.keys(value).length > 0, "changes must not be empty").parse(changes),
+  }), true);
   register("ytptube_update_preset", "Replace a non-default download preset using the API PUT contract.", {
-    id: numericId, preset,
-  }, ({ id, preset }) => call(`/api/presets/${pathId(id)}`, { method: "PUT", body: preset }), true);
+    id: numericId, preset: arbitraryObject,
+  }, ({ id, preset: input }) => call(`/api/presets/${pathId(id)}`, { method: "PUT", body: preset.parse(input) }), true);
 
   return server;
 }

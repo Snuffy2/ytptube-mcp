@@ -161,12 +161,40 @@ describe("YTPTube MCP tools", () => {
           folder: "/media",
           cookies: "private-cookie",
           template: "%(title)s",
-          cli: "--no-playlist",
           extras: { write_thumbnail: true },
           auto_start: false,
         },
       },
     ]);
+  });
+
+  it.each([
+    ["ytptube_add_downloads", { items: { url: "https://video.test/watch/1", cli: "--exec unsafe" } }],
+    ["ytptube_create_tasks", { tasks: { name: "task", url: "https://video.test/watch/1", cli: "--exec unsafe" } }],
+    ["ytptube_patch_task", { id: 7, changes: { cli: "--exec unsafe" } }],
+    ["ytptube_update_task", { id: 7, task: { name: "task", url: "https://video.test/watch/1", cli: "--exec unsafe" } }],
+    ["ytptube_create_preset", { preset: { name: "audio", cli: "--exec unsafe" } }],
+    ["ytptube_patch_preset", { id: 7, changes: { cli: "--exec unsafe" } }],
+    ["ytptube_update_preset", { id: 7, preset: { name: "audio", cli: "--exec unsafe" } }],
+  ])("rejects raw CLI input for write tool %s without a request", async (name, arguments_) => {
+    const { client, request } = await harness(true);
+
+    const response = await client.callTool({ name, arguments: arguments_ });
+
+    expect(response.isError).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("keeps mutation-disabled rejection ahead of raw CLI contract validation", async () => {
+    const { client, request } = await harness(false);
+
+    const response = await client.callTool({
+      name: "ytptube_create_preset",
+      arguments: { preset: { name: "audio", cli: "--exec unsafe" } },
+    });
+
+    expect(text(response)).toContain("MUTATIONS_DISABLED");
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("mutation-gates metadata generation", async () => {

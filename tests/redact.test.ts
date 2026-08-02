@@ -86,6 +86,32 @@ describe("redact", () => {
     );
   });
 
+  it.each([
+    ["Authorization", 'Digest username=\\"alice\\", response=\\"authorization-secret\\"'],
+    ["X-API-Key", 'key-id=\\"safe-id\\", secret=\\"api-key-secret\\"'],
+    ["Cookie", 'session=\\"cookie-secret\\"; theme=light'],
+  ])("redacts escape-aware serialized %s values", (header, credential) => {
+    const result = redact(`before {"${header}":"${credential}","status":"safe"} after`);
+    const text = String(result);
+
+    expect(text).not.toContain(credential);
+    expect(text).not.toMatch(/authorization-secret|api-key-secret|cookie-secret/);
+    expect(text).toContain('"status":"safe"');
+    expect(text).toContain("before");
+    expect(text).toContain("after");
+  });
+
+  it("redacts an escaped-JSON-like header containing escaped quotes", () => {
+    const result = String(redact(
+      'before {\\"Authorization\\":\\"Digest username=\\\\\\"alice\\\\\\", response=\\\\\\"escaped-secret\\\\\\"\\",\\"status\\":\\"safe\\"} after',
+    ));
+
+    expect(result).not.toContain("escaped-secret");
+    expect(result).toContain('\\"status\\":\\"safe\\"');
+    expect(result).toContain("before");
+    expect(result).toContain("after");
+  });
+
   it("redacts authorization credentials for schemes other than Basic and Bearer", () => {
     expect(redact("Authorization: Digest secret\nrequest failed")).toBe(
       "Authorization: Digest [REDACTED]\nrequest failed",
