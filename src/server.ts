@@ -150,7 +150,7 @@ export function createServer(config: Config, client = new YtptubeClient(config))
     return call(position ? "/api/history/position" : `/api/history/${action}`, {
       method: "POST", body: position ? { ids, position: action } : { ids },
     });
-  }, true);
+  }, true, true);
   register("ytptube_clear_history", "Delete queue/history records selected by IDs or a status filter; media deletion is opt-in.", {
     type: z.enum(["queue", "done"]), ids: z.array(z.string().min(1)).min(1).optional(), status: z.string().min(1).optional(), delete_media: z.boolean().default(false),
   }, ({ type, ids, status, delete_media }) => {
@@ -166,7 +166,7 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_generate_task_metadata", "Generate task metadata, NFO, and image sidecar files.", { id: numericId }, ({ id }) => call(`/api/tasks/${pathId(id)}/metadata`, { method: "POST" }), true);
   register("ytptube_generate_history_nfo", "Generate an NFO sidecar for a completed history item.", {
     id, type: z.enum(["tv", "movie"]).default("tv"), overwrite: z.boolean().default(false),
-  }, ({ id, type, overwrite }) => call(`/api/history/${pathId(id)}/nfo`, { method: "POST", body: { type, overwrite } }), true);
+  }, ({ id, type, overwrite }) => call(`/api/history/${pathId(id)}/nfo`, { method: "POST", body: { type, overwrite } }), true, true);
 
   register("ytptube_list_tasks", "List scheduled tasks with pagination.", { page, per_page: perPage }, (input) => call("/api/tasks", { query: input as RequestOptions["query"] }));
   register("ytptube_get_task", "Read a scheduled task by numeric ID.", { id: numericId }, ({ id }) => call(`/api/tasks/${pathId(id)}`));

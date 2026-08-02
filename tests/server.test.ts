@@ -252,6 +252,17 @@ describe("YTPTube MCP tools", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it.each(["ytptube_queue_control", "ytptube_generate_history_nfo"])(
+    "publishes %s as potentially destructive",
+    async (name) => {
+      const { client } = await harness(false);
+      const tools = await client.listTools();
+      const tool = tools.tools.find((candidate) => candidate.name === name);
+
+      expect(tool?.annotations?.destructiveHint).toBe(true);
+    },
+  );
+
   it("keeps mutation gating ahead of handler payload validation", async () => {
     const { client, request } = await harness(false);
 
@@ -339,6 +350,20 @@ describe("YTPTube MCP tools", () => {
     expect(failureText).not.toContain("authorization-value");
     expect(failureText).not.toContain("password-value");
     expect(failureText).not.toContain("apikey-value");
+  });
+
+  it("removes URL userinfo from structured responses while preserving safe URL details", async () => {
+    const { client, request } = await harness(false);
+    request.mockResolvedValueOnce({
+      log: "request failed for https://worker:password@ytptube.test/api/logs?limit=5",
+    });
+
+    const responseText = text(
+      await client.callTool({ name: "ytptube_list_logs", arguments: {} }),
+    );
+
+    expect(responseText).not.toContain("worker:password");
+    expect(responseText).toContain("https://ytptube.test/api/logs?limit=5");
   });
 
   it("redacts authentication and cookie headers from logs and structured API errors", async () => {

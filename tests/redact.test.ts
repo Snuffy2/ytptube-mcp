@@ -57,6 +57,12 @@ describe("redact", () => {
     expect(text).toContain("limit=5");
   });
 
+  it("removes HTTP URL userinfo while preserving the URL destination", () => {
+    expect(
+      redact("request failed for https://worker:password@ytptube.test/api/logs?limit=5#recent"),
+    ).toBe("request failed for https://ytptube.test/api/logs?limit=5#recent");
+  });
+
   it("redacts serialized authentication and API key headers without removing safe text", () => {
     const secrets = ["basic-secret", "proxy-secret", "api-key-secret", "cookie-secret"];
     const result = redact([
@@ -96,6 +102,7 @@ describe("redact", () => {
     ["password", "password-secret"],
     ["token", "token-secret"],
     ["access_token", "access-token-secret"],
+    ["refresh_token", "refresh-token-secret"],
     ["secret", "generic-secret"],
   ])("redacts %s assignments and serialized values in strings", (key, credential) => {
     const result = redact([
