@@ -42,4 +42,18 @@ describe("redact", () => {
       expect(text).not.toContain(secret);
     }
   });
+
+  it("redacts apikey query credentials embedded in strings", () => {
+    const credential = "dcK+OnA=";
+    const result = redact({
+      log: `request failed: https://ytptube.test/api/logs?apikey=${credential}&limit=5`,
+      error: `backend rejected ?apikey=${credential}`,
+      nested: [`result URL: /api/tasks?other=1&apikey=${credential}`],
+    });
+    const text = JSON.stringify(result);
+
+    expect(text).not.toContain(credential);
+    expect(text).toContain("apikey=[REDACTED]");
+    expect(text).toContain("limit=5");
+  });
 });

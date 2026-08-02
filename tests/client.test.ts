@@ -6,8 +6,8 @@ import type { Config } from "../src/config.js";
 function config(overrides: Partial<Config> = {}): Config {
   return {
     baseUrl: new URL("https://ytptube.test/root/api/"),
-    username: "name+/_",
-    password: "pass?=word",
+    username: "u¾",
+    password: "p",
     authMode: "basic",
     allowMutations: false,
     timeoutMs: 1_000,
@@ -23,10 +23,12 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe("YtptubeClient", () => {
-  it("preserves the configured base path and sends URL-safe Basic auth on every request", async () => {
+  it("preserves the base path and sends padded standard Base64 Basic auth on every request", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
     const client = new YtptubeClient(config(), fetchImpl);
-    const expectedCredential = Buffer.from("name+/_:pass?=word").toString("base64url");
+    // This vector requires padding and uses `+`, distinguishing standard Base64
+    // from the unpadded URL-safe variant rejected by the backend decoder.
+    const expectedCredential = "dcK+OnA=";
 
     await client.request("tasks/inspect", { query: { id: 7 } });
     await client.request("/history");
@@ -46,14 +48,14 @@ describe("YtptubeClient", () => {
   it("uses the apikey query parameter without an Authorization header", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
     const client = new YtptubeClient(config({ authMode: "apikey" }), fetchImpl);
-    const expectedCredential = Buffer.from("name+/_:pass?=word").toString("base64url");
+    const expectedCredential = "dcK+OnA=";
 
     await client.request("queue", { method: "POST", query: { format: "mp4" } });
 
     const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(String(url)).toBe(
-      `https://ytptube.test/root/api/queue?format=mp4&apikey=${expectedCredential}`,
-    );
+    const parsedUrl = new URL(String(url));
+    expect(parsedUrl.searchParams.get("apikey")).toBe(expectedCredential);
+    expect(String(url)).toContain("apikey=dcK%2BOnA%3D");
     expect(new Headers(init?.headers).has("Authorization")).toBe(false);
   });
 

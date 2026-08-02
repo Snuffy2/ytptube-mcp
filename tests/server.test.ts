@@ -59,17 +59,17 @@ describe("YTPTube MCP tools", () => {
       ["ytptube_queue_control", { action: "pause", ids: ["7"] }],
       ["ytptube_clear_history", { type: "done", ids: ["7"] }],
       ["ytptube_set_history_archive", { id: "7", archived: true }],
-      ["ytptube_generate_task_metadata", { id: "7" }],
+      ["ytptube_generate_task_metadata", { id: 7 }],
       ["ytptube_generate_history_nfo", { id: "7" }],
       ["ytptube_create_tasks", { tasks: { url: "https://video.test/watch/1" } }],
       [
         "ytptube_patch_task",
-        { id: "7", changes: { url: "https://video.test/watch/2" } },
+        { id: 7, changes: { url: "https://video.test/watch/2" } },
       ],
-      ["ytptube_update_task", { id: "7", task: { url: "https://video.test/watch/2" } }],
+      ["ytptube_update_task", { id: 7, task: { name: "task", url: "https://video.test/watch/2" } }],
       ["ytptube_create_preset", { preset: { name: "audio" } }],
-      ["ytptube_patch_preset", { id: "7", changes: { description: "updated" } }],
-      ["ytptube_update_preset", { id: "7", preset: { name: "audio" } }],
+      ["ytptube_patch_preset", { id: 7, changes: { description: "updated" } }],
+      ["ytptube_update_preset", { id: 7, preset: { name: "audio" } }],
     ] as const;
     for (const [name, arguments_] of mutations) {
       const blocked = await client.callTool({ name, arguments: arguments_ });
@@ -175,7 +175,7 @@ describe("YTPTube MCP tools", () => {
       text(
         await blocked.client.callTool({
           name: "ytptube_generate_task_metadata",
-          arguments: { id: "7" },
+          arguments: { id: 7 },
         }),
       ),
     ).toContain("MUTATIONS_DISABLED");
@@ -184,12 +184,55 @@ describe("YTPTube MCP tools", () => {
     const allowed = await harness(true);
     await allowed.client.callTool({
       name: "ytptube_generate_task_metadata",
-      arguments: { id: "7" },
+      arguments: { id: 7 },
     });
     expect(allowed.request).toHaveBeenCalledWith("/api/tasks/7/metadata", {
       method: "POST",
     });
   });
+
+  it("requires task names and never forwards unsupported task fields", async () => {
+    const { client, request } = await harness(true);
+
+    const missingName = await client.callTool({
+      name: "ytptube_create_tasks",
+      arguments: { tasks: { url: "https://video.test/watch/1" } },
+    });
+    expect(missingName.isError).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+
+    const unsupported = await client.callTool({
+      name: "ytptube_create_tasks",
+      arguments: {
+        tasks: {
+          name: "daily download",
+          url: "https://video.test/watch/1",
+          cookies: "must-not-forward",
+          config: { token: "must-not-forward" },
+        },
+      },
+    });
+    expect(unsupported.isError).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+
+    const tools = await client.listTools();
+    const createTask = tools.tools.find(({ name }) => name === "ytptube_create_tasks");
+    const taskSchemaText = JSON.stringify(createTask?.inputSchema);
+    expect(taskSchemaText).not.toContain('"cookies"');
+    expect(taskSchemaText).not.toContain('"config"');
+  });
+
+  it.each(["ytptube_get_task", "ytptube_get_preset"])(
+    "rejects string IDs for %s without sending a request",
+    async (name) => {
+      const { client, request } = await harness(false);
+
+      const result = await client.callTool({ name, arguments: { id: "7" } });
+
+      expect(request).not.toHaveBeenCalled();
+      expect(text(result)).toMatch(/invalid|number/i);
+    },
+  );
 
   it("redacts nested secrets from successful and structured-error result text", async () => {
     const success = await harness(false);
