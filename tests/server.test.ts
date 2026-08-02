@@ -185,6 +185,19 @@ describe("YTPTube MCP tools", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it("rejects raw CLI input for URL inspection without a request", async () => {
+    const { client, request } = await harness(false);
+
+    const response = await client.callTool({
+      name: "ytptube_inspect_url",
+      arguments: { url: "https://video.test/watch/1", args: "--exec unsafe" },
+    });
+
+    expect(response.isError).toBe(true);
+    expect(text(response)).toContain("Input validation error");
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it("keeps mutation-disabled rejection ahead of raw CLI contract validation", async () => {
     const { client, request } = await harness(false);
 

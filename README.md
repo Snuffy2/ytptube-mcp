@@ -8,7 +8,7 @@ It is a Node.js TypeScript project; it is not published to npm. Run it from a ch
 
 | Tool group | Tools (each starts with `ytptube_`) | What it is for |
 | --- | --- |
-| Health and inspection | `ping`, `get_system_configuration`, `get_ytdlp_options`, `validate_cli_options`, `inspect_url`, `list_logs`, `live_queue` | Check API health and read service, queue, and downloader state. |
+| Health and inspection | `ping`, `get_system_configuration`, `get_ytdlp_options`, `validate_cli_options`, `inspect_url`, `list_logs`, `live_queue` | Check API health and read service, queue, and downloader state. URL inspection accepts a URL plus optional preset, force, and entries fields; it does not accept raw yt-dlp arguments. |
 | Queue and history | `list_history`, `get_history_item`, `add_downloads`, `retry_history_item`, `queue_control`, `clear_history` | Inspect queued/completed items; add, retry, or manage queue entries and clear history when mutations are enabled. |
 | Archive and metadata | `list_archive`, `set_history_archive`, `generate_task_metadata`, `generate_history_nfo` | Search and inspect archive records, archive/unarchive entries, and generate metadata when mutations are enabled. |
 | Tasks | `list_tasks`, `get_task`, `inspect_task_url`, `create_tasks`, `patch_task`, `update_task` | Inspect and manage scheduled work; a task may select a preset. Task URL inspection is a preview only. |

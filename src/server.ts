@@ -112,9 +112,9 @@ export function createServer(config: Config, client = new YtptubeClient(config))
   register("ytptube_validate_cli_options", "Parse and validate yt-dlp CLI options without starting a download.", {
     args: z.string(),
   }, ({ args }) => call("/api/yt-dlp/convert", { method: "POST", body: { args } }));
-  register("ytptube_inspect_url", "Inspect URL metadata without adding it to the download queue.", {
-    url: httpUrl, preset: z.string().optional(), force: z.boolean().optional(), args: z.string().optional(), entries: z.boolean().optional(),
-  }, (input) => call("/api/yt-dlp/url/info", { query: input as RequestOptions["query"] }));
+  register("ytptube_inspect_url", "Inspect URL metadata without adding it to the download queue.", z.object({
+    url: httpUrl, preset: z.string().optional(), force: z.boolean().optional(), entries: z.boolean().optional(),
+  }).strict() as unknown as ZodRawShape, (input) => call("/api/yt-dlp/url/info", { query: input as RequestOptions["query"] }));
   register("ytptube_list_logs", "Read recent YTPTube application logs (when file logging is enabled).", {
     offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(150).optional(),
   }, (input) => call("/api/logs", { query: input as RequestOptions["query"] }));
