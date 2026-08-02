@@ -78,12 +78,19 @@ describe("redact", () => {
 
   it("removes HTTP URL userinfo while preserving the URL destination", () => {
     expect(
-      redact("request failed for https://worker:password@ytptube.test/api/logs?limit=5#recent"),
+      redact(
+        "request failed for https://worker:password@ytptube.test/api/logs?limit=5#recent",
+      ),
     ).toBe("request failed for https://ytptube.test/api/logs?limit=5#recent");
   });
 
   it("redacts serialized authentication and API key headers without removing safe text", () => {
-    const secrets = ["basic-secret", "proxy-secret", "api-key-secret", "cookie-secret"];
+    const secrets = [
+      "basic-secret",
+      "proxy-secret",
+      "api-key-secret",
+      "cookie-secret",
+    ];
     const result = redact([
       `response headers: {"Authorization":"Basic ${secrets[0]}","status":"ok"}`,
       `Proxy-Authorization: Bearer ${secrets[1]}\nretry permitted`,
@@ -106,24 +113,33 @@ describe("redact", () => {
   });
 
   it.each([
-    ["Authorization", 'Digest username=\\"alice\\", response=\\"authorization-secret\\"'],
+    [
+      "Authorization",
+      'Digest username=\\"alice\\", response=\\"authorization-secret\\"',
+    ],
     ["X-API-Key", 'key-id=\\"safe-id\\", secret=\\"api-key-secret\\"'],
     ["Cookie", 'session=\\"cookie-secret\\"; theme=light'],
   ])("redacts escape-aware serialized %s values", (header, credential) => {
-    const result = redact(`before {"${header}":"${credential}","status":"safe"} after`);
+    const result = redact(
+      `before {"${header}":"${credential}","status":"safe"} after`,
+    );
     const text = String(result);
 
     expect(text).not.toContain(credential);
-    expect(text).not.toMatch(/authorization-secret|api-key-secret|cookie-secret/);
+    expect(text).not.toMatch(
+      /authorization-secret|api-key-secret|cookie-secret/,
+    );
     expect(text).toContain('"status":"safe"');
     expect(text).toContain("before");
     expect(text).toContain("after");
   });
 
   it("redacts an escaped-JSON-like header containing escaped quotes", () => {
-    const result = String(redact(
-      'before {\\"Authorization\\":\\"Digest username=\\\\\\"alice\\\\\\", response=\\\\\\"escaped-secret\\\\\\"\\",\\"status\\":\\"safe\\"} after',
-    ));
+    const result = String(
+      redact(
+        'before {\\"Authorization\\":\\"Digest username=\\\\\\"alice\\\\\\", response=\\\\\\"escaped-secret\\\\\\"\\",\\"status\\":\\"safe\\"} after',
+      ),
+    );
 
     expect(result).not.toContain("escaped-secret");
     expect(result).toContain('\\"status\\":\\"safe\\"');
@@ -132,14 +148,26 @@ describe("redact", () => {
   });
 
   it.each([
-    ['{"Authorization":"Basic unterminated-secret', '{"Authorization":"[REDACTED]'],
-    ['{"Proxy-Authorization":"Bearer unterminated-secret', '{"Proxy-Authorization":"[REDACTED]'],
+    [
+      '{"Authorization":"Basic unterminated-secret',
+      '{"Authorization":"[REDACTED]',
+    ],
+    [
+      '{"Proxy-Authorization":"Bearer unterminated-secret',
+      '{"Proxy-Authorization":"[REDACTED]',
+    ],
     ['{"X-API-Key":"unterminated-secret', '{"X-API-Key":"[REDACTED]'],
     ['{"Cookie":"session=unterminated-secret', '{"Cookie":"[REDACTED]'],
-    ['{\\"Authorization\\":\\"Basic unterminated-secret', '{\\"Authorization\\":\\"[REDACTED]'],
-  ])("redacts an unterminated serialized header through the end", (diagnostic, expected) => {
-    expect(redact(diagnostic)).toBe(expected);
-  });
+    [
+      '{\\"Authorization\\":\\"Basic unterminated-secret',
+      '{\\"Authorization\\":\\"[REDACTED]',
+    ],
+  ])(
+    "redacts an unterminated serialized header through the end",
+    (diagnostic, expected) => {
+      expect(redact(diagnostic)).toBe(expected);
+    },
+  );
 
   it("redacts a terminated backslash-rich serialized secret", () => {
     const credential = `secret-value${"\\\\".repeat(2_000)}`;
@@ -166,12 +194,15 @@ describe("redact", () => {
       "proxy rejected Proxy-Authorization: [REDACTED]",
       "proxy-secret",
     ],
-  ])("redacts inline plaintext authorization headers", (diagnostic, expected, credential) => {
-    const result = String(redact(diagnostic));
+  ])(
+    "redacts inline plaintext authorization headers",
+    (diagnostic, expected, credential) => {
+      const result = String(redact(diagnostic));
 
-    expect(result).toBe(expected);
-    expect(result).not.toContain(credential);
-  });
+      expect(result).toBe(expected);
+      expect(result).not.toContain(credential);
+    },
+  );
 
   it.each([
     [
@@ -187,7 +218,9 @@ describe("redact", () => {
       'Digest username="proxy-user", realm="proxy, realm", response="proxy-secret"',
     ],
   ])("redacts the complete plaintext %s value", (header, credential) => {
-    const result = String(redact(`${header}: ${credential}\nfollowing line remains`));
+    const result = String(
+      redact(`${header}: ${credential}\nfollowing line remains`),
+    );
 
     expect(result).toBe(`${header}: [REDACTED]\nfollowing line remains`);
     expect(result).not.toContain(credential);
@@ -203,15 +236,15 @@ describe("redact", () => {
   });
 
   it("redacts plural cookies in string field and query forms", () => {
-    expect(redact("worker failed: cookies=private-cookie retry permitted")).toBe(
-      "worker failed: cookies=[REDACTED] retry permitted",
-    );
+    expect(
+      redact("worker failed: cookies=private-cookie retry permitted"),
+    ).toBe("worker failed: cookies=[REDACTED] retry permitted");
     expect(redact('{"cookies":"private-cookie","status":"safe"}')).toBe(
       '{"cookies":"[REDACTED]","status":"safe"}',
     );
-    expect(redact('{\\"cookies\\":\\"private-cookie\\",\\"status\\":\\"safe\\"}')).toBe(
-      '{\\"cookies\\":\\"[REDACTED]\\",\\"status\\":\\"safe\\"}',
-    );
+    expect(
+      redact('{\\"cookies\\":\\"private-cookie\\",\\"status\\":\\"safe\\"}'),
+    ).toBe('{\\"cookies\\":\\"[REDACTED]\\",\\"status\\":\\"safe\\"}');
     expect(redact("/api/tasks?cookies=private-cookie&limit=5")).toBe(
       "/api/tasks?cookies=[REDACTED]&limit=5",
     );
@@ -231,30 +264,35 @@ describe("redact", () => {
     ["credentials", "plural-credentials-secret"],
     ["auth", "auth-secret"],
     ["basic_auth", "basic-auth-secret"],
-  ])("redacts %s assignments and serialized values in strings", (key, credential) => {
-    const result = redact([
-      `worker failed: ${key}=${credential} retry permitted`,
-      `backend response: {"${key}":"${credential}","status":"denied"}`,
-      `escaped response: {\\"${key}\\":\\"${credential}\\"} complete`,
-      `request URL: /api/logs?offset=0&${key}=${credential}&limit=5`,
-    ]);
-    const text = JSON.stringify(result);
+  ])(
+    "redacts %s assignments and serialized values in strings",
+    (key, credential) => {
+      const result = redact([
+        `worker failed: ${key}=${credential} retry permitted`,
+        `backend response: {"${key}":"${credential}","status":"denied"}`,
+        `escaped response: {\\"${key}\\":\\"${credential}\\"} complete`,
+        `request URL: /api/logs?offset=0&${key}=${credential}&limit=5`,
+      ]);
+      const text = JSON.stringify(result);
 
-    expect(text).not.toContain(credential);
-    expect(text).toContain("retry permitted");
-    expect(text).toContain("status");
-    expect(text).toContain("complete");
-    expect(text).toContain("limit=5");
-  });
+      expect(text).not.toContain(credential);
+      expect(text).toContain("retry permitted");
+      expect(text).toContain("status");
+      expect(text).toContain("complete");
+      expect(text).toContain("limit=5");
+    },
+  );
 
   it("redacts credential aliases as structured keys while preserving safe fields", () => {
-    expect(redact({
-      credential: "one",
-      credentials: { username: "worker", password: "two" },
-      auth: "three",
-      basic_auth: "four",
-      status: "safe",
-    })).toEqual({
+    expect(
+      redact({
+        credential: "one",
+        credentials: { username: "worker", password: "two" },
+        auth: "three",
+        basic_auth: "four",
+        status: "safe",
+      }),
+    ).toEqual({
       credential: "[REDACTED]",
       credentials: "[REDACTED]",
       auth: "[REDACTED]",

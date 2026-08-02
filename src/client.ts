@@ -32,12 +32,19 @@ export class YtptubeClient {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
     const headers = new Headers({ Accept: "application/json" });
-    if (options.body !== undefined) headers.set("Content-Type", "application/json");
-    if (this.config.username !== undefined && this.config.password !== undefined) {
+    if (options.body !== undefined)
+      headers.set("Content-Type", "application/json");
+    if (
+      this.config.username !== undefined &&
+      this.config.password !== undefined
+    ) {
       // YTPTube decodes both transports with Python's standard b64decode. Keep
       // padding and the standard alphabet; URLSearchParams safely escapes it.
-      const credential = Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64");
-      if (this.config.authMode === "apikey") url.searchParams.set("apikey", credential);
+      const credential = Buffer.from(
+        `${this.config.username}:${this.config.password}`,
+      ).toString("base64");
+      if (this.config.authMode === "apikey")
+        url.searchParams.set("apikey", credential);
       else headers.set("Authorization", `Basic ${credential}`);
     }
     const controller = new AbortController();
@@ -46,7 +53,8 @@ export class YtptubeClient {
       const response = await this.fetchImpl(url, {
         method: options.method ?? "GET",
         headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
         signal: controller.signal,
       });
 
@@ -55,25 +63,53 @@ export class YtptubeClient {
       // responses so transport adapters cannot turn a successful empty reply into a crash.
       const text = response.bodyUsed ? "" : await response.text();
       let payload: unknown = text;
-      if (contentType.includes("json") || text.trim().startsWith("{") || text.trim().startsWith("[")) {
+      if (
+        contentType.includes("json") ||
+        text.trim().startsWith("{") ||
+        text.trim().startsWith("[")
+      ) {
         try {
           payload = text ? JSON.parse(text) : null;
         } catch {
-          if (response.ok) throw new YtptubeApiError("YTPTube returned invalid JSON", response.status, "INVALID_RESPONSE");
+          if (response.ok)
+            throw new YtptubeApiError(
+              "YTPTube returned invalid JSON",
+              response.status,
+              "INVALID_RESPONSE",
+            );
         }
       }
       if (!response.ok) {
-        const data = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
-        const message = typeof data.error === "string" ? data.error : `YTPTube request failed with HTTP ${response.status}`;
-        throw new YtptubeApiError(message, response.status, typeof data.code === "string" ? data.code : undefined, data.detail);
+        const data =
+          payload && typeof payload === "object"
+            ? (payload as Record<string, unknown>)
+            : {};
+        const message =
+          typeof data.error === "string"
+            ? data.error
+            : `YTPTube request failed with HTTP ${response.status}`;
+        throw new YtptubeApiError(
+          message,
+          response.status,
+          typeof data.code === "string" ? data.code : undefined,
+          data.detail,
+        );
       }
       return payload;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new YtptubeApiError("YTPTube request timed out", undefined, "TIMEOUT");
+        throw new YtptubeApiError(
+          "YTPTube request timed out",
+          undefined,
+          "TIMEOUT",
+        );
       }
       if (error instanceof YtptubeApiError) throw error;
-      throw new YtptubeApiError("YTPTube request failed", undefined, "TRANSPORT_ERROR");
+      throw new YtptubeApiError(
+        "YTPTube request failed",
+        undefined,
+        "TRANSPORT_ERROR",
+      );
     } finally {
       clearTimeout(timer);
     }

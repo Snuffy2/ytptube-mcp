@@ -28,7 +28,9 @@ describe("loadConfig", () => {
   ])("rejects incomplete credentials: %s", (credentials, _description) => {
     expect(() =>
       loadConfig({ YTPTUBE_BASE_URL: "https://ytptube.test", ...credentials }),
-    ).toThrow("YTPTUBE_USERNAME and YTPTUBE_PASSWORD must be provided together");
+    ).toThrow(
+      "YTPTUBE_USERNAME and YTPTUBE_PASSWORD must be provided together",
+    );
   });
 
   it("enables mutations only for an explicit true value", () => {
