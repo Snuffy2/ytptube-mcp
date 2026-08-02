@@ -140,14 +140,8 @@ All tools are prefixed with `ytptube_`.
 ## Development
 
 ```sh
-# Run the unit tests once.
-npm test
-
-# Check TypeScript without emitting build output.
-npm run typecheck
-
-# Build the server.
-npm run build
+# Install dependencies, type-check, test, and build.
+./scripts/test.sh
 
 # Run the repository quality hooks.
 prek run --all-files
