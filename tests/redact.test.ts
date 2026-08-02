@@ -165,6 +165,25 @@ describe("redact", () => {
     );
   });
 
+  it("redacts plural cookies in string field and query forms", () => {
+    expect(redact("worker failed: cookies=private-cookie retry permitted")).toBe(
+      "worker failed: cookies=[REDACTED] retry permitted",
+    );
+    expect(redact('{"cookies":"private-cookie","status":"safe"}')).toBe(
+      '{"cookies":"[REDACTED]","status":"safe"}',
+    );
+    expect(redact('{\\"cookies\\":\\"private-cookie\\",\\"status\\":\\"safe\\"}')).toBe(
+      '{\\"cookies\\":\\"[REDACTED]\\",\\"status\\":\\"safe\\"}',
+    );
+    expect(redact("/api/tasks?cookies=private-cookie&limit=5")).toBe(
+      "/api/tasks?cookies=[REDACTED]&limit=5",
+    );
+    expect(redact({ cookies: "private-cookie", status: "safe" })).toEqual({
+      cookies: "[REDACTED]",
+      status: "safe",
+    });
+  });
+
   it.each([
     ["password", "password-secret"],
     ["token", "token-secret"],
