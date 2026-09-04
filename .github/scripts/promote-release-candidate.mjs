@@ -50,6 +50,11 @@ function assertCandidateCommit(commit, sourceSha, expected) {
     throw new Error(
       "Existing promotion does not descend directly from the release source.",
     );
+  assertCandidatePaths(
+    git(["diff-tree", "--no-commit-id", "--name-only", "-r", sourceSha, commit])
+      .split("\n")
+      .filter(Boolean),
+  );
   for (const [path, content] of Object.entries(expected))
     if (
       git(["show", `${commit}:${path}`]) !==
@@ -58,6 +63,71 @@ function assertCandidateCommit(commit, sourceSha, expected) {
       throw new Error(
         "Existing promotion does not contain deterministic candidate metadata.",
       );
+}
+
+function expectedCandidateMetadata(tag) {
+  return expectedMetadata(
+    JSON.parse(readFileSync("package.json", "utf8")),
+    JSON.parse(readFileSync("package-lock.json", "utf8")),
+    tag,
+  );
+}
+
+function assertAlreadyPromotedCandidate({
+  refs,
+  defaultBranch,
+  tag,
+  sourceSha,
+  expected,
+}) {
+  const tagRef = `refs/tags/${tag}`;
+  const candidateSha = refs[`refs/heads/${defaultBranch}`];
+  const tagObject = refs[tagRef];
+  const tagCommit = refs[`${tagRef}^{}`] ?? tagObject;
+  if (!candidateSha || !tagObject || !tagCommit)
+    throw new Error("Release branch or tag disappeared before promotion.");
+  if (candidateSha !== tagCommit || tagObject !== candidateSha)
+    throw new Error("Release branch or tag changed before promotion.");
+  git(["fetch", "--no-tags", "origin", candidateSha]);
+  assertCandidateCommit(candidateSha, sourceSha, {
+    "package.json": expected.packageJson,
+    "package-lock.json": expected.packageLock,
+  });
+  return candidateSha;
+}
+
+/** Bind a release run either to its source refs or to its exact prior promotion. */
+export function verifyReleasePreflight({
+  defaultBranch,
+  prerelease,
+  sourceSha,
+  tag,
+}) {
+  if (git(["rev-parse", "HEAD"]) !== sourceSha)
+    throw new Error("Checkout does not match the trusted release source.");
+  const expected = expectedCandidateMetadata(tag);
+  const refs = remoteRefs(defaultBranch, tag);
+  const tagRef = `refs/tags/${tag}`;
+  const tagCommit = refs[`${tagRef}^{}`] ?? refs[tagRef];
+  if (
+    refs[`refs/heads/${defaultBranch}`] === sourceSha &&
+    tagCommit === sourceSha
+  )
+    return { status: "source" };
+  if (prerelease)
+    throw new Error(
+      "Release branch or tag changed before prerelease publishing.",
+    );
+  return {
+    status: "already-promoted",
+    candidateSha: assertAlreadyPromotedCandidate({
+      refs,
+      defaultBranch,
+      tag,
+      sourceSha,
+      expected,
+    }),
+  };
 }
 
 /** Require the default branch and both forms of the release tag to name one candidate commit. */
@@ -134,11 +204,7 @@ export async function promoteCandidate({
     git(["rev-parse", `${sourceSha}^{tree}`]) !== manifest.sourceTree
   )
     throw new Error("Checkout does not match the trusted release source.");
-  const expected = expectedMetadata(
-    JSON.parse(readFileSync("package.json", "utf8")),
-    JSON.parse(readFileSync("package-lock.json", "utf8")),
-    tag,
-  );
+  const expected = expectedCandidateMetadata(tag);
   if (
     JSON.stringify(expected.packageJson) !==
       JSON.stringify(manifest.packageJson) ||
@@ -150,32 +216,24 @@ export async function promoteCandidate({
     );
   if (prerelease) return "prerelease-noop";
   const refs = remoteRefs(defaultBranch, tag);
-  const headRef = `refs/heads/${defaultBranch}`;
-  const tagRef = `refs/tags/${tag}`;
-  const peeledTagRef = `${tagRef}^{}`;
-  const currentHead = refs[headRef];
-  const currentTagObject = refs[tagRef];
-  const currentTagCommit = refs[peeledTagRef] ?? currentTagObject;
-  if (!currentHead || !currentTagObject || !currentTagCommit)
-    throw new Error("Release branch or tag disappeared before promotion.");
+  const currentHead = refs[`refs/heads/${defaultBranch}`];
+  const currentTagObject = refs[`refs/tags/${tag}`];
+  const currentTagCommit = refs[`refs/tags/${tag}^{}`] ?? currentTagObject;
   if (
     currentHead !== sourceSha ||
     currentTagObject !== manifest.tagObject ||
     currentTagCommit !== sourceSha
   ) {
-    if (currentHead === currentTagCommit) {
-      if (currentTagObject !== currentHead)
-        throw new Error(
-          "Release tag does not directly name the promoted candidate.",
-        );
-      git(["fetch", "--no-tags", "origin", currentHead]);
-      assertCandidateCommit(currentHead, sourceSha, {
-        "package.json": expected.packageJson,
-        "package-lock.json": expected.packageLock,
-      });
-      return { status: "already-promoted", candidateSha: currentHead };
-    }
-    throw new Error("Release branch or tag changed before promotion.");
+    return {
+      status: "already-promoted",
+      candidateSha: assertAlreadyPromotedCandidate({
+        refs,
+        defaultBranch,
+        tag,
+        sourceSha,
+        expected,
+      }),
+    };
   }
   writeFileSync(
     "package.json",
@@ -228,6 +286,15 @@ async function main() {
       tag: required("RELEASE_TAG"),
       sourceSha: required("SOURCE_SHA"),
       tagObject: required("TAG_OBJECT"),
+    });
+    return;
+  }
+  if (command === "verify-preflight") {
+    verifyReleasePreflight({
+      defaultBranch: required("DEFAULT_BRANCH"),
+      prerelease: required("IS_PRERELEASE") === "true",
+      sourceSha: required("SOURCE_SHA"),
+      tag: required("RELEASE_TAG"),
     });
     return;
   }

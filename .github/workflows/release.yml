@@ -41,7 +41,7 @@ jobs:
           assertReleaseEvent({ defaultBranch: process.env.DEFAULT_BRANCH, eventSha: process.env.EVENT_SHA, prerelease: process.env.IS_PRERELEASE === "true", tag: process.env.RELEASE_TAG, target: process.env.RELEASE_TARGET });
           NODE
           [[ "$(git rev-parse HEAD)" == "$EVENT_SHA" ]]
-          [[ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" == "$EVENT_SHA" ]]
+          DEFAULT_BRANCH="$DEFAULT_BRANCH" IS_PRERELEASE="$IS_PRERELEASE" RELEASE_TAG="$RELEASE_TAG" SOURCE_SHA="$EVENT_SHA" node .github/scripts/promote-release-candidate.mjs verify-preflight
 
       - name: Set up Node.js
         uses: actions/setup-node@v7

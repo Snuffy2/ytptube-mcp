@@ -22,6 +22,7 @@ import {
 } from "../.github/scripts/release-candidate.mjs";
 import {
   promoteCandidate,
+  verifyReleasePreflight,
   verifyRemotePromotion,
   verifyRemoteReleaseSource,
 } from "../.github/scripts/promote-release-candidate.mjs";
@@ -270,9 +271,57 @@ describe("release workflow promotion", () => {
     return { artifact, checkout, remote, root, source, sourceSha, tag };
   }
 
+  function forceForgedCandidate(
+    context: Awaited<ReturnType<typeof setup>>,
+    mutate: (
+      metadata: ReturnType<typeof expectedMetadata>,
+    ) => string[] = () => [],
+  ) {
+    const metadata = expectedMetadata(
+      JSON.parse(readFileSync(join(context.source, "package.json"), "utf8")),
+      JSON.parse(
+        readFileSync(join(context.source, "package-lock.json"), "utf8"),
+      ),
+      context.tag,
+    );
+    const extraPaths = mutate(metadata);
+    writeFileSync(
+      join(context.source, "package.json"),
+      `${JSON.stringify(metadata.packageJson, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(context.source, "package-lock.json"),
+      `${JSON.stringify(metadata.packageLock, null, 2)}\n`,
+    );
+    for (const path of extraPaths)
+      writeFileSync(join(context.source, path), "unexpected\n");
+    command(context.source, "add", ".");
+    command(context.source, "commit", "--quiet", "-m", "forged candidate");
+    const candidate = command(context.source, "rev-parse", "HEAD");
+    command(context.source, "tag", "--force", context.tag, candidate);
+    command(
+      context.source,
+      "push",
+      "--quiet",
+      "--force",
+      "origin",
+      "HEAD:refs/heads/main",
+      `refs/tags/${context.tag}`,
+    );
+    return candidate;
+  }
+
   it("promotes branch and tag together, then recognizes an exact retry", async () => {
     const context = await setup();
     process.chdir(context.checkout);
+    expect(
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: false,
+        sourceSha: context.sourceSha,
+        tag: context.tag,
+      }),
+    ).toEqual({ status: "source" });
     await expect(
       promoteCandidate({
         directory: context.artifact,
@@ -302,6 +351,14 @@ describe("release workflow promotion", () => {
     command(context.root, "clone", "--quiet", context.remote, retry);
     command(retry, "checkout", "--quiet", context.sourceSha);
     process.chdir(retry);
+    expect(
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: false,
+        sourceSha: context.sourceSha,
+        tag: context.tag,
+      }),
+    ).toEqual({ status: "already-promoted", candidateSha: promoted });
     await expect(
       promoteCandidate({
         directory: context.artifact,
@@ -314,6 +371,159 @@ describe("release workflow promotion", () => {
       status: "already-promoted",
       candidateSha: promoted,
     });
+  });
+
+  it("rejects moved or forged release retries before package publication", async () => {
+    const tagOnly = await setup();
+    process.chdir(tagOnly.checkout);
+    const tagOnlyPromotion = await promoteCandidate({
+      directory: tagOnly.artifact,
+      sourceSha: tagOnly.sourceSha,
+      defaultBranch: "main",
+      prerelease: false,
+      tag: tagOnly.tag,
+    });
+    if (tagOnlyPromotion === "prerelease-noop")
+      throw new Error("stable release unexpectedly skipped promotion");
+    command(tagOnly.source, "tag", "--force", tagOnly.tag, tagOnly.sourceSha);
+    command(
+      tagOnly.source,
+      "push",
+      "--quiet",
+      "--force",
+      "origin",
+      `refs/tags/${tagOnly.tag}`,
+    );
+    command(tagOnly.checkout, "checkout", "--quiet", tagOnly.sourceSha);
+    expect(() =>
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: false,
+        sourceSha: tagOnly.sourceSha,
+        tag: tagOnly.tag,
+      }),
+    ).toThrow("changed before promotion");
+
+    const branchOnly = await setup();
+    process.chdir(branchOnly.checkout);
+    const branchOnlyPromotion = await promoteCandidate({
+      directory: branchOnly.artifact,
+      sourceSha: branchOnly.sourceSha,
+      defaultBranch: "main",
+      prerelease: false,
+      tag: branchOnly.tag,
+    });
+    if (branchOnlyPromotion === "prerelease-noop")
+      throw new Error("stable release unexpectedly skipped promotion");
+    command(
+      branchOnly.source,
+      "push",
+      "--quiet",
+      "--force",
+      "origin",
+      `${branchOnly.sourceSha}:refs/heads/main`,
+    );
+    command(branchOnly.checkout, "checkout", "--quiet", branchOnly.sourceSha);
+    expect(() =>
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: false,
+        sourceSha: branchOnly.sourceSha,
+        tag: branchOnly.tag,
+      }),
+    ).toThrow("changed before promotion");
+
+    const unrelatedParent = await setup();
+    const unrelatedCandidate = command(
+      unrelatedParent.source,
+      "commit-tree",
+      `${unrelatedParent.sourceSha}^{tree}`,
+      "-m",
+      "forged root candidate",
+    );
+    command(
+      unrelatedParent.source,
+      "update-ref",
+      "refs/heads/main",
+      unrelatedCandidate,
+    );
+    command(
+      unrelatedParent.source,
+      "tag",
+      "--force",
+      unrelatedParent.tag,
+      unrelatedCandidate,
+    );
+    command(
+      unrelatedParent.source,
+      "push",
+      "--quiet",
+      "--force",
+      "origin",
+      "refs/heads/main",
+      `refs/tags/${unrelatedParent.tag}`,
+    );
+    process.chdir(unrelatedParent.checkout);
+    expect(() =>
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: false,
+        sourceSha: unrelatedParent.sourceSha,
+        tag: unrelatedParent.tag,
+      }),
+    ).toThrow("descend directly");
+
+    const extraPath = await setup();
+    forceForgedCandidate(extraPath, () => ["unexpected.txt"]);
+    process.chdir(extraPath.checkout);
+    expect(() =>
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: false,
+        sourceSha: extraPath.sourceSha,
+        tag: extraPath.tag,
+      }),
+    ).toThrow("changes paths beyond package metadata");
+
+    const wrongMetadata = await setup();
+    forceForgedCandidate(wrongMetadata, (metadata) => {
+      metadata.packageJson.version = "9.9.9";
+      metadata.packageLock.version = "9.9.9";
+      metadata.packageLock.packages[""].version = "9.9.9";
+      return [];
+    });
+    process.chdir(wrongMetadata.checkout);
+    expect(() =>
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: false,
+        sourceSha: wrongMetadata.sourceSha,
+        tag: wrongMetadata.tag,
+      }),
+    ).toThrow("deterministic candidate metadata");
+
+    const prerelease = await setup("v1.2.3-rc.1");
+    writeFileSync(join(prerelease.source, "later.txt"), "later\n");
+    command(prerelease.source, "add", "later.txt");
+    command(prerelease.source, "commit", "--quiet", "-m", "later");
+    command(prerelease.source, "tag", "--force", prerelease.tag);
+    command(
+      prerelease.source,
+      "push",
+      "--quiet",
+      "--force",
+      "origin",
+      `refs/tags/${prerelease.tag}`,
+    );
+    process.chdir(prerelease.checkout);
+    expect(() =>
+      verifyReleasePreflight({
+        defaultBranch: "main",
+        prerelease: true,
+        sourceSha: prerelease.sourceSha,
+        tag: prerelease.tag,
+      }),
+    ).toThrow("before prerelease publishing");
   });
 
   it("does not partially update when the remote rejects the tag or the branch is stale", async () => {
