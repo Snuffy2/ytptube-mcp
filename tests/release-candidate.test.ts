@@ -621,7 +621,7 @@ describe("release workflow promotion", () => {
     ).toBe(context.sourceSha);
   });
 
-  it("keeps prereleases off the default branch and rejects a tag moved after promotion", async () => {
+  it("allows later default-branch commits but rejects unrelated history or tag movement", async () => {
     const prerelease = await setup("v1.2.3-rc.1");
     process.chdir(prerelease.checkout);
     await expect(
@@ -667,6 +667,64 @@ describe("release workflow promotion", () => {
         tag: prerelease.tag,
         sourceSha: prerelease.sourceSha,
         tagObject: prereleaseTagObject,
+      }),
+    ).not.toThrow();
+
+    command(
+      prerelease.source,
+      "tag",
+      "--force",
+      prerelease.tag,
+      prerelease.sourceSha,
+    );
+    command(
+      prerelease.source,
+      "push",
+      "--quiet",
+      "--force",
+      "origin",
+      `refs/tags/${prerelease.tag}`,
+    );
+    expect(() =>
+      verifyRemoteReleaseSource({
+        defaultBranch: "main",
+        tag: prerelease.tag,
+        sourceSha: prerelease.sourceSha,
+        tagObject: prereleaseTagObject,
+      }),
+    ).toThrow("moved before prerelease");
+
+    const unrelated = await setup("v1.2.4-rc.1");
+    const unrelatedTagObject = command(
+      unrelated.root,
+      "--git-dir",
+      unrelated.remote,
+      "rev-parse",
+      `refs/tags/${unrelated.tag}`,
+    );
+    const unrelatedHead = command(
+      unrelated.source,
+      "commit-tree",
+      `${unrelated.sourceSha}^{tree}`,
+      "-m",
+      "unrelated history",
+    );
+    command(unrelated.source, "update-ref", "refs/heads/main", unrelatedHead);
+    command(
+      unrelated.source,
+      "push",
+      "--quiet",
+      "--force",
+      "origin",
+      "refs/heads/main",
+    );
+    process.chdir(unrelated.checkout);
+    expect(() =>
+      verifyRemoteReleaseSource({
+        defaultBranch: "main",
+        tag: unrelated.tag,
+        sourceSha: unrelated.sourceSha,
+        tagObject: unrelatedTagObject,
       }),
     ).toThrow("moved before prerelease");
 

@@ -40,6 +40,15 @@ function remoteRefs(branch, tag) {
   );
 }
 
+function isAncestor(ancestor, descendant) {
+  try {
+    git(["merge-base", "--is-ancestor", ancestor, descendant]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function assertCandidateCommit(commit, sourceSha, expected) {
   if (
     git(["rev-list", "--parents", "-n1", commit])
@@ -165,10 +174,22 @@ export function verifyRemoteReleaseSource({
 }) {
   if (![sourceSha, tagObject].every((value) => /^[0-9a-f]{40}$/i.test(value)))
     throw new Error("Release source provenance must use full Git object IDs.");
+  git([
+    "fetch",
+    "--force",
+    "--no-tags",
+    "origin",
+    `refs/heads/${defaultBranch}:refs/remotes/origin/${defaultBranch}`,
+  ]);
+  const fetchedBranch = git([
+    "rev-parse",
+    `refs/remotes/origin/${defaultBranch}`,
+  ]);
   const refs = remoteRefs(defaultBranch, tag);
   const tagRef = `refs/tags/${tag}`;
   if (
-    refs[`refs/heads/${defaultBranch}`] !== sourceSha ||
+    refs[`refs/heads/${defaultBranch}`] !== fetchedBranch ||
+    !isAncestor(sourceSha, fetchedBranch) ||
     refs[tagRef] !== tagObject ||
     (refs[`${tagRef}^{}`] ?? refs[tagRef]) !== sourceSha
   )
