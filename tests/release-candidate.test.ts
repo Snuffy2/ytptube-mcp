@@ -21,6 +21,7 @@ import {
   versionFromTag,
 } from "../.github/scripts/release-candidate.mjs";
 import {
+  publishVerifiedStatus,
   promoteCandidate,
   verifyReleasePreflight,
   verifyRemotePromotion,
@@ -311,6 +312,15 @@ describe("release workflow promotion", () => {
     return candidate;
   }
 
+  function temporaryRef(runId: string, candidateSha: string) {
+    return `refs/heads/release-candidates/${runId}/${candidateSha}`;
+  }
+
+  function remoteRef(context: Awaited<ReturnType<typeof setup>>, ref: string) {
+    const output = command(context.root, "ls-remote", context.remote, ref);
+    return output ? output.split("\t")[0] : undefined;
+  }
+
   it("promotes branch and tag together, then recognizes an exact retry", async () => {
     const context = await setup();
     process.chdir(context.checkout);
@@ -370,6 +380,216 @@ describe("release workflow promotion", () => {
     ).resolves.toMatchObject({
       status: "already-promoted",
       candidateSha: promoted,
+    });
+  });
+
+  it("makes the candidate reachable for attestation and removes the temporary ref after promotion", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const runId = "42";
+    let candidateSha = "";
+    const result = await promoteCandidate({
+      directory: context.artifact,
+      sourceSha: context.sourceSha,
+      defaultBranch: "main",
+      prerelease: false,
+      tag: context.tag,
+      candidateRunId: runId,
+      attestCandidate: async (sha: string) => {
+        candidateSha = sha;
+        expect(remoteRef(context, temporaryRef(runId, sha))).toBe(sha);
+        expect(
+          command(
+            context.root,
+            "--git-dir",
+            context.remote,
+            "rev-parse",
+            "refs/heads/main",
+          ),
+        ).toBe(context.sourceSha);
+      },
+    });
+    expect(result).toMatchObject({ status: "promoted", candidateSha });
+    expect(
+      remoteRef(context, temporaryRef(runId, candidateSha)),
+    ).toBeUndefined();
+  });
+
+  it("cleans up a reachable candidate when attestation rejects without changing protected refs", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const runId = "42";
+    let candidateSha = "";
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        candidateRunId: runId,
+        attestCandidate: async (sha: string) => {
+          candidateSha = sha;
+          expect(remoteRef(context, temporaryRef(runId, sha))).toBe(sha);
+          throw new Error("status rejected");
+        },
+      }),
+    ).rejects.toThrow("status rejected");
+    expect(
+      remoteRef(context, temporaryRef(runId, candidateSha)),
+    ).toBeUndefined();
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        "refs/heads/main",
+      ),
+    ).toBe(context.sourceSha);
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        `refs/tags/${context.tag}^{commit}`,
+      ),
+    ).toBe(context.sourceSha);
+  });
+
+  it("cleans up the candidate when a final promotion lease rejects", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const runId = "42";
+    let candidateSha = "";
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        candidateRunId: runId,
+        attestCandidate: async (sha: string) => {
+          candidateSha = sha;
+          writeFileSync(join(context.source, "later.txt"), "later\n");
+          command(context.source, "add", "later.txt");
+          command(context.source, "commit", "--quiet", "-m", "later");
+          command(context.source, "push", "--quiet", "origin", "main");
+        },
+      }),
+    ).rejects.toThrow();
+    expect(
+      remoteRef(context, temporaryRef(runId, candidateSha)),
+    ).toBeUndefined();
+    expect(remoteRef(context, "refs/heads/main")).not.toBe(context.sourceSha);
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        `refs/tags/${context.tag}^{commit}`,
+      ),
+    ).toBe(context.sourceSha);
+  });
+
+  it("rejects an existing temporary ref before attestation", async () => {
+    const context = await setup();
+    const ref = "refs/heads/release-candidates/42/preexisting";
+    command(
+      context.source,
+      "push",
+      "--quiet",
+      "origin",
+      `${context.sourceSha}:${ref}`,
+    );
+    process.chdir(context.checkout);
+    let attested = false;
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        temporaryRef: ref,
+        attestCandidate: async () => {
+          attested = true;
+        },
+      }),
+    ).rejects.toThrow();
+    expect(attested).toBe(false);
+    expect(remoteRef(context, ref)).toBe(context.sourceSha);
+    expect(remoteRef(context, "refs/heads/main")).toBe(context.sourceSha);
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        `refs/tags/${context.tag}^{commit}`,
+      ),
+    ).toBe(context.sourceSha);
+  });
+
+  it("preserves a moved temporary ref and fails cleanup", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const runId = "42";
+    let ref = "";
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        candidateRunId: runId,
+        attestCandidate: async (candidateSha: string) => {
+          ref = temporaryRef(runId, candidateSha);
+          command(
+            context.source,
+            "push",
+            "--quiet",
+            "--force",
+            "origin",
+            `${context.sourceSha}:${ref}`,
+          );
+        },
+      }),
+    ).rejects.toThrow("Temporary candidate ref changed before cleanup");
+    expect(remoteRef(context, ref)).toBe(context.sourceSha);
+    expect(remoteRef(context, "refs/heads/main")).not.toBe(context.sourceSha);
+  });
+
+  it("publishes a verified status bound to the candidate and release run", async () => {
+    const sha = "a".repeat(40);
+    let request: { url: string; init?: RequestInit } | undefined;
+    await publishVerifiedStatus({
+      repository: "owner/repository",
+      sha,
+      context: "Node CI",
+      runId: "42",
+      token: "test-token",
+      fetchImpl: async (url: string, init?: RequestInit) => {
+        request = { url, init };
+        return new Response(
+          JSON.stringify({ state: "success", context: "Node CI", sha }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    });
+    expect(request?.url).toBe(
+      `https://api.github.com/repos/owner/repository/statuses/${sha}`,
+    );
+    expect(request?.init?.method).toBe("POST");
+    expect(JSON.parse(String(request?.init?.body))).toEqual({
+      state: "success",
+      context: "Node CI",
+      description: "Verified by release workflow run 42",
+      target_url: "https://github.com/owner/repository/actions/runs/42",
     });
   });
 
@@ -766,6 +986,11 @@ describe("release workflow promotion", () => {
       /CANDIDATE_ARTIFACT: release-candidate-\$\{\{ github\.run_id \}\}/,
     );
     expect(workflow).toMatch(/promote-release-candidate\.mjs/);
+    expect(workflow).toMatch(/statuses:\s*write/);
+    expect(workflow).toMatch(/uses: j178\/prek-action@v2/);
+    expect(workflow).toMatch(
+      /REQUIRED_STATUS_CONTEXTS:\s*\|\s*Node CI\s*review/,
+    );
     expect(workflow).toMatch(
       /npm publish \.\/release-artifact\/candidate\.tgz --ignore-scripts --tag "\$npm_tag"/,
     );
