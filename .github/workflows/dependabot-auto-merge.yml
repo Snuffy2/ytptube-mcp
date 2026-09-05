@@ -12,7 +12,6 @@ jobs:
   authorize-dependency-update:
     if: >-
       github.event.repository.fork == false &&
-      github.actor == 'dependabot[bot]' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (startsWith(github.event.pull_request.head.ref, 'dependabot/npm_and_yarn/') ||
@@ -26,38 +25,20 @@ jobs:
       - name: Authorize dependency update files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          case "${HEAD_REF}" in
-            dependabot/npm_and_yarn/*) ecosystem="npm" ;;
-            dependabot/github_actions/*) ecosystem="github-actions" ;;
-            *)
-              echo "Refusing auto-merge; unsupported Dependabot branch: ${HEAD_REF}"
-              exit 1
-              ;;
-          esac
-          changed_files="$(gh api --paginate \
+          changed_files="${RUNNER_TEMP}/dependabot-changed-files"
+          commits="${RUNNER_TEMP}/dependabot-commits.json"
+          gh api --paginate \
             "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
-            --jq '.[].filename')"
-          if [[ -z "${changed_files}" ]]; then
-            echo "Refusing auto-merge; the pull request has no changed files."
-            exit 1
-          fi
-          while IFS= read -r changed_file; do
-            case "${ecosystem}:${changed_file}" in
-              npm:package.json | npm:package-lock.json) ;;
-              github-actions:.github/workflows/*.yml | github-actions:.github/workflows/*.yaml) ;;
-              github-actions:action.yml | github-actions:action.yaml) ;;
-              *)
-                echo "Refusing auto-merge; changed files were:"
-                echo "${changed_files}"
-                exit 1
-                ;;
-            esac
-          done <<< "${changed_files}"
+            --jq '.[].filename' > "${changed_files}"
+          gh api --paginate --slurp \
+            "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100" \
+            > "${commits}"
+          node .github/scripts/dependabot-auto-merge.mjs \
+            "${GITHUB_EVENT_PATH}" "${changed_files}" "${commits}"
 
   enable-auto-merge:
     needs: authorize-dependency-update
