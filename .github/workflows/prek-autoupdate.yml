@@ -2,15 +2,14 @@ name: prek Autoupdate
 
 on:
   schedule:
-    - cron: "0 4 * * *"
+    - cron: "0 2 * * *"
   push:
     branches:
       - main
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: prek-autoupdate-${{ github.repository }}
@@ -30,4 +29,6 @@ jobs:
         id: prek-autoupdate
         uses: Snuffy2/prek-autoupdate@v2
         with:
+          token: ${{ secrets.PREK_AUTOUPDATE_TOKEN }}
+          auto-merge: true
           update-day: "0"
