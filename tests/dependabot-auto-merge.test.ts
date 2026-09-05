@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { authorizeDependabotUpdate } from "../.github/scripts/dependabot-auto-merge.mjs";
 
@@ -47,6 +48,33 @@ function updateCommit(sha: string, previous: string, base: string) {
 }
 
 describe("Dependabot auto-merge authorization", () => {
+  it("checks out the trusted helper before executing it", () => {
+    const workflow = readFileSync(
+      new URL(
+        "../.github/workflows/dependabot-auto-merge.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const authorizationJob = workflow.slice(
+      workflow.indexOf("authorize-dependency-update:"),
+      workflow.indexOf("enable-auto-merge:"),
+    );
+    const checkout = authorizationJob.indexOf("uses: actions/checkout@v7");
+    const helper = authorizationJob.indexOf(
+      "node .github/scripts/dependabot-auto-merge.mjs",
+    );
+
+    expect(checkout).toBeGreaterThanOrEqual(0);
+    expect(checkout).toBeLessThan(helper);
+    expect(authorizationJob.slice(checkout, helper)).toContain(
+      "persist-credentials: false",
+    );
+    expect(authorizationJob.slice(checkout, helper)).toContain(
+      "ref: ${{ github.event.pull_request.base.sha }}",
+    );
+  });
+
   it("authorizes an update created by Dependabot", () => {
     const event = pullRequestEvent("opened");
     expect(
