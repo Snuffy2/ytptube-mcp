@@ -11,16 +11,133 @@ concurrency:
   group: npm-release-${{ github.repository }}
   cancel-in-progress: false
 
+env:
+  CANDIDATE_ARTIFACT: release-candidate-${{ github.run_id }}
+
 jobs:
   verify:
     permissions:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the released tag
+      - name: Check out the immutable release source
         uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ github.event.release.tag_name }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind the candidate to the release event
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_SHA: ${{ github.sha }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TARGET: ${{ github.event.release.target_commitish }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { assertReleaseEvent } from "./.github/scripts/release-candidate.mjs";
+          assertReleaseEvent({ defaultBranch: process.env.DEFAULT_BRANCH, eventSha: process.env.EVENT_SHA, prerelease: process.env.IS_PRERELEASE === "true", tag: process.env.RELEASE_TAG, target: process.env.RELEASE_TARGET });
+          NODE
+          [[ "$(git rev-parse HEAD)" == "$EVENT_SHA" ]]
+          DEFAULT_BRANCH="$DEFAULT_BRANCH" IS_PRERELEASE="$IS_PRERELEASE" RELEASE_TAG="$RELEASE_TAG" SOURCE_SHA="$EVENT_SHA" node .github/scripts/promote-release-candidate.mjs verify-preflight
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Update package version from release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: npm version "${RELEASE_TAG#v}" --allow-same-version --ignore-scripts --no-git-tag-version
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify and pack the release candidate
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          npm test
+          npm run build
+          mkdir release-artifact
+          npm pack --pack-destination release-artifact
+          mv release-artifact/*.tgz release-artifact/candidate.tgz
+
+      - name: Bind the package artifact to the trusted source
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/release-candidate.mjs create-manifest \
+            --tarball release-artifact/candidate.tgz \
+            --output release-artifact/candidate.json \
+            --source-sha "$EVENT_SHA" \
+            --source-tree "$(git rev-parse "$EVENT_SHA^{tree}")" \
+            --tag "$RELEASE_TAG" \
+            --tag-object "$(git rev-parse "refs/tags/$RELEASE_TAG")" \
+            --package-json package.json \
+            --package-lock package-lock.json
+
+      - name: Upload verified release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}
+          path: release-artifact
+          if-no-files-found: error
+
+  update-manifest:
+    needs: verify
+    outputs:
+      candidate_sha: ${{ steps.promote.outputs.candidate_sha }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the immutable release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Download the current-run release candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}
+          path: release-artifact
+
+      - name: Reconstruct and atomically promote the verified candidate
+        id: promote
+        env:
+          CANDIDATE_DIRECTORY: release-artifact
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: node .github/scripts/promote-release-candidate.mjs promote
+
+  publish:
+    needs: [verify, update-manifest]
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the immutable release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -31,99 +148,59 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      - name: Update package version from release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          npm version "${RELEASE_TAG#v}" --allow-same-version --ignore-scripts --no-git-tag-version
-
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Verify and pack the release
-        run: |
-          npm run typecheck
-          npm test
-          npm run build
-          mkdir release-artifact
-          npm pack --pack-destination release-artifact
-
-      - name: Upload verified package
-        uses: actions/upload-artifact@v7
-        with:
-          name: npm-package
-          path: release-artifact/*.tgz
-          if-no-files-found: error
-
-  update-manifest:
-    needs: verify
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out the released tag
-        uses: actions/checkout@v7
-        with:
-          ref: refs/tags/${{ github.event.release.tag_name }}
-          fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          package-manager-cache: false
-
-      - name: Update package version from release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          npm version "${RELEASE_TAG#v}" --allow-same-version --ignore-scripts --no-git-tag-version
-
-      - name: Commit version and move release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_TARGET: ${{ github.event.release.target_commitish }}
-        run: |
-          git check-ref-format --branch "$RELEASE_TARGET" > /dev/null
-          original_tag_object="$(git rev-parse "refs/tags/$RELEASE_TAG")"
-          original_tag_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
-          remote_target_commit="$(git ls-remote --exit-code --heads origin "refs/heads/$RELEASE_TARGET" | cut -f1)"
-
-          if [ "$remote_target_commit" != "$original_tag_commit" ]; then
-            echo "Release target moved after the tag was created; refusing to update it." >&2
-            exit 1
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: set package version ${RELEASE_TAG#v} [skip ci]"
-          fi
-
-          git push --force-with-lease="refs/heads/$RELEASE_TARGET:$original_tag_commit" origin "HEAD:refs/heads/$RELEASE_TARGET"
-          git tag --force "$RELEASE_TAG" HEAD
-          git push --force-with-lease="refs/tags/$RELEASE_TAG:$original_tag_object" origin "refs/tags/$RELEASE_TAG"
-
-  publish:
-    needs: [verify, update-manifest]
-    permissions:
-      contents: read
-      id-token: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-
-      - name: Download verified package
+      - name: Download the current-run release candidate
         uses: actions/download-artifact@v8
         with:
-          name: npm-package
+          name: ${{ env.CANDIDATE_ARTIFACT }}
           path: release-artifact
 
-      - name: Publish to npm
-        run: npm publish ./release-artifact/*.tgz
+      - name: Verify the exact package before publishing
+        env:
+          CANDIDATE_SHA: ${{ needs.update-manifest.outputs.candidate_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/release-candidate.mjs verify-artifact \
+            --directory release-artifact \
+            --source-sha "$SOURCE_SHA" \
+            --tag "$RELEASE_TAG"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { expectedMetadata, readCandidateArtifact } from "./.github/scripts/release-candidate.mjs";
+          const { manifest } = await readCandidateArtifact("release-artifact");
+          const expected = expectedMetadata(JSON.parse(readFileSync("package.json")), JSON.parse(readFileSync("package-lock.json")), process.env.RELEASE_TAG);
+          if (JSON.stringify(expected.packageJson) !== JSON.stringify(manifest.packageJson) || JSON.stringify(expected.packageLock) !== JSON.stringify(manifest.packageLock)) throw new Error("Candidate does not reconstruct from the trusted release source.");
+          NODE
+          if [[ "$IS_PRERELEASE" == true ]]; then
+            TAG_OBJECT="$(node -p 'require("./release-artifact/candidate.json").tagObject')" node .github/scripts/promote-release-candidate.mjs verify-source
+          else
+            node .github/scripts/promote-release-candidate.mjs verify-remote
+          fi
+
+      - name: Publish the verified package once
+        run: |
+          set -euo pipefail
+          package_name="$(node -p 'require("./release-artifact/candidate.json").packageJson.name')"
+          package_version="$(node -p 'require("./release-artifact/candidate.json").version')"
+          expected_integrity="$(node -p 'require("./release-artifact/candidate.json").artifact.integrity')"
+          npm_tag="latest"
+          [[ "$package_version" == *-* ]] && npm_tag="next"
+          lookup_error="$(mktemp)"
+          trap 'rm -f "$lookup_error"' EXIT
+          if ! published_integrity="$(npm view "$package_name@$package_version" dist.integrity 2>"$lookup_error")"; then
+            if grep -q 'E404' "$lookup_error"; then
+              published_integrity=""
+            else
+              cat "$lookup_error" >&2
+              exit 1
+            fi
+          fi
+          if [[ -n "$published_integrity" ]]; then
+            [[ "$published_integrity" == "$expected_integrity" ]] || { echo "npm version already exists with a different artifact" >&2; exit 1; }
+            echo "Package is already published with the verified artifact."
+          else
+            npm publish ./release-artifact/candidate.tgz --ignore-scripts --tag "$npm_tag"
+          fi
