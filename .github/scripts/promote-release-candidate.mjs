@@ -148,11 +148,7 @@ export async function publishVerifiedStatus({
       `GitHub rejected verified status ${context} with HTTP ${response.status}.`,
     );
   const status = await response.json();
-  if (
-    status.state !== "success" ||
-    status.context !== context ||
-    status.sha !== sha
-  )
+  if (status.state !== "success" || status.context !== context)
     throw new Error(`GitHub did not confirm verified status ${context}.`);
 }
 

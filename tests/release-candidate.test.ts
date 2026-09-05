@@ -576,7 +576,7 @@ describe("release workflow promotion", () => {
       fetchImpl: async (url: string, init?: RequestInit) => {
         request = { url, init };
         return new Response(
-          JSON.stringify({ state: "success", context: "Node CI", sha }),
+          JSON.stringify({ state: "success", context: "Node CI" }),
           { status: 201, headers: { "Content-Type": "application/json" } },
         );
       },
