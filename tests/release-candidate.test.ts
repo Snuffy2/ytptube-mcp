@@ -312,6 +312,15 @@ describe("release workflow promotion", () => {
     return candidate;
   }
 
+  function temporaryRef(runId: string, candidateSha: string) {
+    return `refs/heads/release-candidates/${runId}/${candidateSha}`;
+  }
+
+  function remoteRef(context: Awaited<ReturnType<typeof setup>>, ref: string) {
+    const output = command(context.root, "ls-remote", context.remote, ref);
+    return output ? output.split("\t")[0] : undefined;
+  }
+
   it("promotes branch and tag together, then recognizes an exact retry", async () => {
     const context = await setup();
     process.chdir(context.checkout);
@@ -374,18 +383,21 @@ describe("release workflow promotion", () => {
     });
   });
 
-  it("attests the exact candidate before updating either protected ref", async () => {
+  it("makes the candidate reachable for attestation and removes the temporary ref after promotion", async () => {
     const context = await setup();
     process.chdir(context.checkout);
-    const attestations: string[] = [];
-    const result = promoteCandidate({
+    const runId = "42";
+    let candidateSha = "";
+    const result = await promoteCandidate({
       directory: context.artifact,
       sourceSha: context.sourceSha,
       defaultBranch: "main",
       prerelease: false,
       tag: context.tag,
-      attestCandidate: async (candidateSha: string) => {
-        attestations.push(candidateSha);
+      candidateRunId: runId,
+      attestCandidate: async (sha: string) => {
+        candidateSha = sha;
+        expect(remoteRef(context, temporaryRef(runId, sha))).toBe(sha);
         expect(
           command(
             context.root,
@@ -395,12 +407,37 @@ describe("release workflow promotion", () => {
             "refs/heads/main",
           ),
         ).toBe(context.sourceSha);
-        throw new Error("status rejected");
       },
     });
-    await expect(result).rejects.toThrow("status rejected");
-    expect(attestations).toHaveLength(1);
-    expect(attestations[0]).toMatch(/^[0-9a-f]{40}$/);
+    expect(result).toMatchObject({ status: "promoted", candidateSha });
+    expect(
+      remoteRef(context, temporaryRef(runId, candidateSha)),
+    ).toBeUndefined();
+  });
+
+  it("cleans up a reachable candidate when attestation rejects without changing protected refs", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const runId = "42";
+    let candidateSha = "";
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        candidateRunId: runId,
+        attestCandidate: async (sha: string) => {
+          candidateSha = sha;
+          expect(remoteRef(context, temporaryRef(runId, sha))).toBe(sha);
+          throw new Error("status rejected");
+        },
+      }),
+    ).rejects.toThrow("status rejected");
+    expect(
+      remoteRef(context, temporaryRef(runId, candidateSha)),
+    ).toBeUndefined();
     expect(
       command(
         context.root,
@@ -419,6 +456,112 @@ describe("release workflow promotion", () => {
         `refs/tags/${context.tag}^{commit}`,
       ),
     ).toBe(context.sourceSha);
+  });
+
+  it("cleans up the candidate when a final promotion lease rejects", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const runId = "42";
+    let candidateSha = "";
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        candidateRunId: runId,
+        attestCandidate: async (sha: string) => {
+          candidateSha = sha;
+          writeFileSync(join(context.source, "later.txt"), "later\n");
+          command(context.source, "add", "later.txt");
+          command(context.source, "commit", "--quiet", "-m", "later");
+          command(context.source, "push", "--quiet", "origin", "main");
+        },
+      }),
+    ).rejects.toThrow();
+    expect(
+      remoteRef(context, temporaryRef(runId, candidateSha)),
+    ).toBeUndefined();
+    expect(remoteRef(context, "refs/heads/main")).not.toBe(context.sourceSha);
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        `refs/tags/${context.tag}^{commit}`,
+      ),
+    ).toBe(context.sourceSha);
+  });
+
+  it("rejects an existing temporary ref before attestation", async () => {
+    const context = await setup();
+    const ref = "refs/heads/release-candidates/42/preexisting";
+    command(
+      context.source,
+      "push",
+      "--quiet",
+      "origin",
+      `${context.sourceSha}:${ref}`,
+    );
+    process.chdir(context.checkout);
+    let attested = false;
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        temporaryRef: ref,
+        attestCandidate: async () => {
+          attested = true;
+        },
+      }),
+    ).rejects.toThrow();
+    expect(attested).toBe(false);
+    expect(remoteRef(context, ref)).toBe(context.sourceSha);
+    expect(remoteRef(context, "refs/heads/main")).toBe(context.sourceSha);
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        `refs/tags/${context.tag}^{commit}`,
+      ),
+    ).toBe(context.sourceSha);
+  });
+
+  it("preserves a moved temporary ref and fails cleanup", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const runId = "42";
+    let ref = "";
+    await expect(
+      promoteCandidate({
+        directory: context.artifact,
+        sourceSha: context.sourceSha,
+        defaultBranch: "main",
+        prerelease: false,
+        tag: context.tag,
+        candidateRunId: runId,
+        attestCandidate: async (candidateSha: string) => {
+          ref = temporaryRef(runId, candidateSha);
+          command(
+            context.source,
+            "push",
+            "--quiet",
+            "--force",
+            "origin",
+            `${context.sourceSha}:${ref}`,
+          );
+        },
+      }),
+    ).rejects.toThrow("Temporary candidate ref changed before cleanup");
+    expect(remoteRef(context, ref)).toBe(context.sourceSha);
+    expect(remoteRef(context, "refs/heads/main")).not.toBe(context.sourceSha);
   });
 
   it("publishes a verified status bound to the candidate and release run", async () => {

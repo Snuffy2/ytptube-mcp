@@ -40,6 +40,34 @@ function remoteRefs(branch, tag) {
   );
 }
 
+function remoteRef(ref) {
+  const matches = git(["ls-remote", "origin", ref])
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.split("\t"))
+    .filter(([, name]) => name === ref);
+  if (matches.length > 1)
+    throw new Error("Temporary candidate ref resolved ambiguously.");
+  return matches[0]?.[0];
+}
+
+function candidateRefForRun(runId, candidateSha) {
+  if (!/^\d+$/.test(runId))
+    throw new Error("Candidate run ID must be numeric.");
+  if (!/^[0-9a-f]{40}$/i.test(candidateSha))
+    throw new Error("Candidate SHA must be a full Git object ID.");
+  return `refs/heads/release-candidates/${runId}/${candidateSha}`;
+}
+
+function assertTemporaryCandidateRef(ref) {
+  if (
+    !/^refs\/heads\/release-candidates\/\d+\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
+      ref,
+    )
+  )
+    throw new Error("Temporary candidate ref is invalid.");
+}
+
 function isAncestor(ancestor, descendant) {
   try {
     git(["merge-base", "--is-ancestor", ancestor, descendant]);
@@ -251,6 +279,8 @@ export async function promoteCandidate({
   defaultBranch,
   prerelease,
   tag,
+  candidateRunId = "0",
+  temporaryRef,
   attestCandidate = async () => {},
 }) {
   const { manifest } = await readCandidateArtifact(directory);
@@ -323,20 +353,51 @@ export async function promoteCandidate({
   git(["add", "package.json", "package-lock.json"]);
   git(["commit", "-m", `chore: set package version ${version} [skip ci]`]);
   const candidateSha = git(["rev-parse", "HEAD"]);
-  await attestCandidate(candidateSha);
-  git(["tag", "--force", tag, candidateSha]);
-  git([
-    "push",
-    "--atomic",
-    `--force-with-lease=refs/heads/${defaultBranch}:${sourceSha}`,
-    `--force-with-lease=refs/tags/${tag}:${manifest.tagObject}`,
-    "origin",
-    `HEAD:refs/heads/${defaultBranch}`,
-    `refs/tags/${tag}:refs/tags/${tag}`,
-  ]);
-  const after = remoteRefs(defaultBranch, tag);
-  assertFinalRefs(after, defaultBranch, tag, candidateSha);
-  return { status: "promoted", candidateSha };
+  const candidateRef =
+    temporaryRef ?? candidateRefForRun(candidateRunId, candidateSha);
+  assertTemporaryCandidateRef(candidateRef);
+  let candidateRefCreated = false;
+  try {
+    // GitHub must receive the object before it can attach commit statuses to it.
+    git([
+      "push",
+      `--force-with-lease=${candidateRef}:`,
+      "origin",
+      `${candidateSha}:${candidateRef}`,
+    ]);
+    candidateRefCreated = true;
+    if (remoteRef(candidateRef) !== candidateSha)
+      throw new Error("Temporary candidate ref does not name the candidate.");
+    await attestCandidate(candidateSha);
+    git(["tag", "--force", tag, candidateSha]);
+    git([
+      "push",
+      "--atomic",
+      `--force-with-lease=refs/heads/${defaultBranch}:${sourceSha}`,
+      `--force-with-lease=refs/tags/${tag}:${manifest.tagObject}`,
+      "origin",
+      `HEAD:refs/heads/${defaultBranch}`,
+      `refs/tags/${tag}:refs/tags/${tag}`,
+    ]);
+    const after = remoteRefs(defaultBranch, tag);
+    assertFinalRefs(after, defaultBranch, tag, candidateSha);
+    return { status: "promoted", candidateSha };
+  } finally {
+    if (candidateRefCreated) {
+      try {
+        git([
+          "push",
+          `--force-with-lease=${candidateRef}:${candidateSha}`,
+          "origin",
+          `:${candidateRef}`,
+        ]);
+      } catch {
+        throw new Error("Temporary candidate ref changed before cleanup.");
+      }
+      if (remoteRef(candidateRef))
+        throw new Error("Temporary candidate ref remained after cleanup.");
+    }
+  }
 }
 
 async function main() {
@@ -380,6 +441,7 @@ async function main() {
     defaultBranch: required("DEFAULT_BRANCH"),
     prerelease: required("IS_PRERELEASE") === "true",
     tag: required("RELEASE_TAG"),
+    candidateRunId: required("GITHUB_RUN_ID"),
     attestCandidate: async (candidateSha) => {
       for (const context of contexts)
         await publishVerifiedStatus({
