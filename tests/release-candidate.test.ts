@@ -21,6 +21,7 @@ import {
   versionFromTag,
 } from "../.github/scripts/release-candidate.mjs";
 import {
+  publishVerifiedStatus,
   promoteCandidate,
   verifyReleasePreflight,
   verifyRemotePromotion,
@@ -370,6 +371,82 @@ describe("release workflow promotion", () => {
     ).resolves.toMatchObject({
       status: "already-promoted",
       candidateSha: promoted,
+    });
+  });
+
+  it("attests the exact candidate before updating either protected ref", async () => {
+    const context = await setup();
+    process.chdir(context.checkout);
+    const attestations: string[] = [];
+    const result = promoteCandidate({
+      directory: context.artifact,
+      sourceSha: context.sourceSha,
+      defaultBranch: "main",
+      prerelease: false,
+      tag: context.tag,
+      attestCandidate: async (candidateSha: string) => {
+        attestations.push(candidateSha);
+        expect(
+          command(
+            context.root,
+            "--git-dir",
+            context.remote,
+            "rev-parse",
+            "refs/heads/main",
+          ),
+        ).toBe(context.sourceSha);
+        throw new Error("status rejected");
+      },
+    });
+    await expect(result).rejects.toThrow("status rejected");
+    expect(attestations).toHaveLength(1);
+    expect(attestations[0]).toMatch(/^[0-9a-f]{40}$/);
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        "refs/heads/main",
+      ),
+    ).toBe(context.sourceSha);
+    expect(
+      command(
+        context.root,
+        "--git-dir",
+        context.remote,
+        "rev-parse",
+        `refs/tags/${context.tag}^{commit}`,
+      ),
+    ).toBe(context.sourceSha);
+  });
+
+  it("publishes a verified status bound to the candidate and release run", async () => {
+    const sha = "a".repeat(40);
+    let request: { url: string; init?: RequestInit } | undefined;
+    await publishVerifiedStatus({
+      repository: "owner/repository",
+      sha,
+      context: "Node CI",
+      runId: "42",
+      token: "test-token",
+      fetchImpl: async (url: string, init?: RequestInit) => {
+        request = { url, init };
+        return new Response(
+          JSON.stringify({ state: "success", context: "Node CI", sha }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    });
+    expect(request?.url).toBe(
+      `https://api.github.com/repos/owner/repository/statuses/${sha}`,
+    );
+    expect(request?.init?.method).toBe("POST");
+    expect(JSON.parse(String(request?.init?.body))).toEqual({
+      state: "success",
+      context: "Node CI",
+      description: "Verified by release workflow run 42",
+      target_url: "https://github.com/owner/repository/actions/runs/42",
     });
   });
 
@@ -766,6 +843,11 @@ describe("release workflow promotion", () => {
       /CANDIDATE_ARTIFACT: release-candidate-\$\{\{ github\.run_id \}\}/,
     );
     expect(workflow).toMatch(/promote-release-candidate\.mjs/);
+    expect(workflow).toMatch(/statuses:\s*write/);
+    expect(workflow).toMatch(/uses: j178\/prek-action@v2/);
+    expect(workflow).toMatch(
+      /REQUIRED_STATUS_CONTEXTS:\s*\|\s*Node CI\s*review/,
+    );
     expect(workflow).toMatch(
       /npm publish \.\/release-artifact\/candidate\.tgz --ignore-scripts --tag "\$npm_tag"/,
     );

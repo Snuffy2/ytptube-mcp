@@ -82,6 +82,52 @@ function expectedCandidateMetadata(tag) {
   );
 }
 
+/** Publish one ruleset status backed by the current verified release run. */
+export async function publishVerifiedStatus({
+  repository,
+  sha,
+  context,
+  runId,
+  token,
+  fetchImpl = fetch,
+}) {
+  if (!/^[0-9a-f]{40}$/i.test(sha))
+    throw new Error("Candidate SHA must be a full Git object ID.");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
+    throw new Error("Repository must use owner/name format.");
+  if (!context || !/^\d+$/.test(runId) || !token)
+    throw new Error("Status context, release run ID, and token are required.");
+  const response = await fetchImpl(
+    `https://api.github.com/repos/${repository}/statuses/${sha}`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2026-03-10",
+      },
+      body: JSON.stringify({
+        state: "success",
+        context,
+        description: `Verified by release workflow run ${runId}`,
+        target_url: `https://github.com/${repository}/actions/runs/${runId}`,
+      }),
+    },
+  );
+  if (!response.ok)
+    throw new Error(
+      `GitHub rejected verified status ${context} with HTTP ${response.status}.`,
+    );
+  const status = await response.json();
+  if (
+    status.state !== "success" ||
+    status.context !== context ||
+    status.sha !== sha
+  )
+    throw new Error(`GitHub did not confirm verified status ${context}.`);
+}
+
 function assertAlreadyPromotedCandidate({
   refs,
   defaultBranch,
@@ -205,6 +251,7 @@ export async function promoteCandidate({
   defaultBranch,
   prerelease,
   tag,
+  attestCandidate = async () => {},
 }) {
   const { manifest } = await readCandidateArtifact(directory);
   const version = assertReleaseEvent({
@@ -276,6 +323,7 @@ export async function promoteCandidate({
   git(["add", "package.json", "package-lock.json"]);
   git(["commit", "-m", `chore: set package version ${version} [skip ci]`]);
   const candidateSha = git(["rev-parse", "HEAD"]);
+  await attestCandidate(candidateSha);
   git(["tag", "--force", tag, candidateSha]);
   git([
     "push",
@@ -320,12 +368,28 @@ async function main() {
     return;
   }
   if (command !== "promote") throw new Error("Unknown promotion command.");
+  const contexts = required("REQUIRED_STATUS_CONTEXTS")
+    .split("\n")
+    .map((context) => context.trim())
+    .filter(Boolean);
+  if (new Set(contexts).size !== contexts.length)
+    throw new Error("Required status contexts must be unique.");
   const result = await promoteCandidate({
     directory: required("CANDIDATE_DIRECTORY"),
     sourceSha: required("SOURCE_SHA"),
     defaultBranch: required("DEFAULT_BRANCH"),
     prerelease: required("IS_PRERELEASE") === "true",
     tag: required("RELEASE_TAG"),
+    attestCandidate: async (candidateSha) => {
+      for (const context of contexts)
+        await publishVerifiedStatus({
+          repository: required("GITHUB_REPOSITORY"),
+          sha: candidateSha,
+          context,
+          runId: required("GITHUB_RUN_ID"),
+          token: required("GITHUB_TOKEN"),
+        });
+    },
   });
   if (result === "prerelease-noop") {
     console.log(result);
