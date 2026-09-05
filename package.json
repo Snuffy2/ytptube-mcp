@@ -1,6 +1,6 @@
 {
   "name": "ytptube-mcp",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "Model Context Protocol server for a self-hosted YTPTube instance",
   "keywords": [
     "mcp",
