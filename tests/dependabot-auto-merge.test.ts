@@ -133,6 +133,14 @@ describe("Dependabot auto-merge authorization", () => {
     ).toBe("npm");
   });
 
+  it("rejects a reopened chain containing a non-web-flow merge", () => {
+    const commits = updateChain();
+    commits[1].committer.login = "maintainer";
+    expect(() =>
+      authorize({ ancestryProofs: updateChainProofs(), commits }),
+    ).toThrow();
+  });
+
   it("does not use the triggering actor or action as authorization inputs", () => {
     for (const [actor, action] of [
       ["dependabot[bot]", "opened"],
