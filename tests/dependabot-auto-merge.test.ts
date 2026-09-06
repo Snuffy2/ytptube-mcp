@@ -65,6 +65,32 @@ afterEach(() => {
 });
 
 describe("Dependabot auto-merge authorization", () => {
+  it("authorizes a verified direct uv lockfile update", () => {
+    const event = pullRequestEvent("opened");
+    event.pull_request.head.ref = "dependabot/uv/pytest-9.0.0";
+    expect(
+      authorizeDependabotUpdate({
+        actor: "dependabot[bot]",
+        changedFiles: ["uv.lock"],
+        commits: [dependabotCommit()],
+        event,
+      }),
+    ).toBe("uv");
+  });
+
+  it("rejects uv updates that change another file", () => {
+    const event = pullRequestEvent("opened");
+    event.pull_request.head.ref = "dependabot/uv/pytest-9.0.0";
+    expect(() =>
+      authorizeDependabotUpdate({
+        actor: "dependabot[bot]",
+        changedFiles: ["pyproject.toml", "uv.lock"],
+        commits: [dependabotCommit()],
+        event,
+      }),
+    ).toThrow();
+  });
+
   it("authorizes a verified direct npm update with its lockfile", () => {
     expect(
       authorizeDependabotUpdate({

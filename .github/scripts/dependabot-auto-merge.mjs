@@ -11,6 +11,7 @@ function refuse(message) {
 }
 
 function dependencyEcosystem(headRef) {
+  if (headRef.startsWith("dependabot/uv/")) return "uv";
   if (headRef.startsWith("dependabot/npm_and_yarn/")) return "npm";
   if (headRef.startsWith("dependabot/github_actions/")) return "github-actions";
   refuse(`unsupported Dependabot branch: ${headRef}`);
@@ -19,6 +20,11 @@ function dependencyEcosystem(headRef) {
 function assertAllowedFiles(ecosystem, changedFiles, trustedBaseDirectory) {
   if (changedFiles.length === 0)
     refuse("the pull request has no changed files.");
+  if (ecosystem === "uv") {
+    if (changedFiles.length !== 1 || changedFiles[0] !== "uv.lock")
+      refuse("uv updates must change only uv.lock.");
+    return;
+  }
   if (ecosystem === "npm") {
     const isPackageFile = (path) =>
       path === "package.json" || path === "package-lock.json";
