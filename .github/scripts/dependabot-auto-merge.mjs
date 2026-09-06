@@ -1,5 +1,5 @@
 /** Validate that a dependency pull request remains safe to auto-merge. */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,19 +16,42 @@ function dependencyEcosystem(headRef) {
   refuse(`unsupported Dependabot branch: ${headRef}`);
 }
 
-function assertAllowedFiles(ecosystem, changedFiles) {
+function assertAllowedFiles(ecosystem, changedFiles, trustedBaseDirectory) {
   if (changedFiles.length === 0)
     refuse("the pull request has no changed files.");
-  const allowed = changedFiles.every((path) => {
-    if (ecosystem === "npm")
-      return path === "package.json" || path === "package-lock.json";
-    return (
-      /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path) ||
+  if (ecosystem === "npm") {
+    const isPackageFile = (path) =>
+      path === "package.json" || path === "package-lock.json";
+    if (
+      changedFiles.length !== 2 ||
+      !changedFiles.includes("package.json") ||
+      !changedFiles.includes("package-lock.json") ||
+      !changedFiles.every(isPackageFile)
+    )
+      refuse(
+        "npm updates must change only package.json and package-lock.json.",
+      );
+    return;
+  }
+
+  const isExistingAllowedFile = (path) =>
+    (/^\.github\/workflows\/[^/]+\.ya?ml$/.test(path) ||
       path === "action.yml" ||
-      path === "action.yaml"
-    );
-  });
-  if (!allowed) refuse(`changed files were:\n${changedFiles.join("\n")}`);
+      path === "action.yaml") &&
+    existsSync(resolve(trustedBaseDirectory, path));
+  if (!changedFiles.every(isExistingAllowedFile))
+    refuse("the update changes a file outside the trusted dependency scope.");
+}
+
+function assertDirectDependabotHistory(event, commits) {
+  const [commit] = commits;
+  if (
+    commits.length !== 1 ||
+    commit?.author?.login !== DEPENDABOT ||
+    commit?.commit?.verification?.verified !== true ||
+    commit?.sha !== event.pull_request.head.sha
+  )
+    refuse("the pull request does not have a verified Dependabot head commit.");
 }
 
 function assertUpdateBranchHistory(event, commits) {
@@ -72,6 +95,7 @@ export function authorizeDependabotUpdate({
   changedFiles,
   commits,
   event,
+  trustedBaseDirectory = process.cwd(),
 }) {
   const pullRequest = event.pull_request;
   if (
@@ -85,8 +109,9 @@ export function authorizeDependabotUpdate({
     );
 
   const ecosystem = dependencyEcosystem(pullRequest.head.ref);
-  if (actor !== DEPENDABOT) assertUpdateBranchHistory(event, commits);
-  assertAllowedFiles(ecosystem, changedFiles);
+  if (actor === DEPENDABOT) assertDirectDependabotHistory(event, commits);
+  else assertUpdateBranchHistory(event, commits);
+  assertAllowedFiles(ecosystem, changedFiles, trustedBaseDirectory);
   return ecosystem;
 }
 

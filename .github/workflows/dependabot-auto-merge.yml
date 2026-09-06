@@ -62,8 +62,7 @@ jobs:
 
   disable-auto-merge:
     if: >-
-      always() &&
-      needs.authorize-dependency-update.result != 'success' &&
+      failure() && !cancelled() &&
       github.event.repository.fork == false &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&

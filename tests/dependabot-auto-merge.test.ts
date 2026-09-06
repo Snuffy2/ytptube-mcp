@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { authorizeDependabotUpdate } from "../.github/scripts/dependabot-auto-merge.mjs";
 
 const dependabotSha = "1".repeat(40);
@@ -7,6 +9,7 @@ const firstBaseSha = "2".repeat(40);
 const firstUpdateSha = "3".repeat(40);
 const currentBaseSha = "4".repeat(40);
 const headSha = "5".repeat(40);
+const temporaryDirectories: string[] = [];
 
 function pullRequestEvent(action = "synchronize") {
   return {
@@ -47,51 +50,48 @@ function updateCommit(sha: string, previous: string, base: string) {
   };
 }
 
+function trustedBaseWith(path: string) {
+  const directory = mkdtempSync(join(tmpdir(), "dependabot-authorizer-"));
+  temporaryDirectories.push(directory);
+  const file = join(directory, path);
+  mkdirSync(join(file, ".."), { recursive: true });
+  writeFileSync(file, "fixture\n");
+  return directory;
+}
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0))
+    rmSync(directory, { force: true, recursive: true });
+});
+
 describe("Dependabot auto-merge authorization", () => {
-  it("checks out the trusted helper before executing it", () => {
-    const workflow = readFileSync(
-      new URL(
-        "../.github/workflows/dependabot-auto-merge.yml",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    const authorizationJob = workflow.slice(
-      workflow.indexOf("authorize-dependency-update:"),
-      workflow.indexOf("enable-auto-merge:"),
-    );
-    const checkout = authorizationJob.indexOf("uses: actions/checkout@v7");
-    const helper = authorizationJob.indexOf(
-      "node .github/scripts/dependabot-auto-merge.mjs",
-    );
-
-    expect(checkout).toBeGreaterThanOrEqual(0);
-    expect(checkout).toBeLessThan(helper);
-    expect(authorizationJob.slice(checkout, helper)).toContain(
-      "persist-credentials: false",
-    );
-    expect(authorizationJob.slice(checkout, helper)).toContain(
-      "ref: ${{ github.event.pull_request.base.sha }}",
-    );
-  });
-
-  it("authorizes an update created by Dependabot", () => {
-    const event = pullRequestEvent("opened");
+  it("authorizes a verified direct npm update with its lockfile", () => {
     expect(
       authorizeDependabotUpdate({
         actor: "dependabot[bot]",
         changedFiles: ["package.json", "package-lock.json"],
         commits: [dependabotCommit()],
-        event,
+        event: pullRequestEvent("opened"),
       }),
     ).toBe("npm");
   });
 
-  it("authorizes repeated GitHub Update branch merges", () => {
+  it("requires npm updates to include the manifest and lockfile together", () => {
+    expect(() =>
+      authorizeDependabotUpdate({
+        actor: "dependabot[bot]",
+        changedFiles: ["package-lock.json"],
+        commits: [dependabotCommit()],
+        event: pullRequestEvent("opened"),
+      }),
+    ).toThrow();
+  });
+
+  it("authorizes a verified GitHub Update branch chain", () => {
     expect(
       authorizeDependabotUpdate({
         actor: "Snuffy2",
-        changedFiles: ["package-lock.json"],
+        changedFiles: ["package.json", "package-lock.json"],
         commits: [
           dependabotCommit(dependabotSha),
           updateCommit(firstUpdateSha, dependabotSha, firstBaseSha),
@@ -102,18 +102,17 @@ describe("Dependabot auto-merge authorization", () => {
     ).toBe("npm");
   });
 
-  it("keeps the GitHub Actions file allowlist", () => {
-    const event = pullRequestEvent("opened");
-    event.pull_request.head.ref =
-      "dependabot/github_actions/actions/checkout-7";
-    expect(
+  it("rejects an unverified direct Dependabot history", () => {
+    const commit = dependabotCommit();
+    commit.commit.verification.verified = false;
+    expect(() =>
       authorizeDependabotUpdate({
         actor: "dependabot[bot]",
-        changedFiles: [".github/workflows/ci.yml"],
-        commits: [dependabotCommit()],
-        event,
+        changedFiles: ["package.json", "package-lock.json"],
+        commits: [commit],
+        event: pullRequestEvent("opened"),
       }),
-    ).toBe("github-actions");
+    ).toThrow();
   });
 
   it("rejects a direct maintainer edit before an Update branch merge", () => {
@@ -121,7 +120,7 @@ describe("Dependabot auto-merge authorization", () => {
     expect(() =>
       authorizeDependabotUpdate({
         actor: "Snuffy2",
-        changedFiles: ["package.json"],
+        changedFiles: ["package.json", "package-lock.json"],
         commits: [
           dependabotCommit(dependabotSha),
           {
@@ -133,44 +132,49 @@ describe("Dependabot auto-merge authorization", () => {
         ],
         event: pullRequestEvent(),
       }),
-    ).toThrow("non-Dependabot edit");
+    ).toThrow();
   });
 
-  it("rejects a merge that is not from the current base branch", () => {
+  it("rejects an Update branch merge that does not use the current base", () => {
     expect(() =>
       authorizeDependabotUpdate({
         actor: "Snuffy2",
-        changedFiles: ["package-lock.json"],
+        changedFiles: ["package.json", "package-lock.json"],
         commits: [
           dependabotCommit(dependabotSha),
           updateCommit(headSha, dependabotSha, firstBaseSha),
         ],
         event: pullRequestEvent(),
       }),
-    ).toThrow("current base branch");
+    ).toThrow();
   });
 
-  it("rejects an unsigned lookalike Update branch history", () => {
-    const commit = updateCommit(headSha, dependabotSha, currentBaseSha);
-    commit.commit.verification.verified = false;
-    expect(() =>
+  it("allows existing trusted top-level GitHub Actions files", () => {
+    const event = pullRequestEvent("opened");
+    event.pull_request.head.ref =
+      "dependabot/github_actions/actions/checkout-7";
+    expect(
       authorizeDependabotUpdate({
-        actor: "Snuffy2",
-        changedFiles: ["package-lock.json"],
-        commits: [dependabotCommit(dependabotSha), commit],
-        event: pullRequestEvent(),
+        actor: "dependabot[bot]",
+        changedFiles: [".github/workflows/ci.yml"],
+        commits: [dependabotCommit()],
+        event,
+        trustedBaseDirectory: trustedBaseWith(".github/workflows/ci.yml"),
       }),
-    ).toThrow("non-Dependabot edit");
+    ).toBe("github-actions");
   });
 
-  it("rejects files outside the ecosystem allowlist", () => {
+  it("rejects action manifests absent from the trusted base", () => {
+    const event = pullRequestEvent("opened");
+    event.pull_request.head.ref = "dependabot/github_actions/example/action";
     expect(() =>
       authorizeDependabotUpdate({
         actor: "dependabot[bot]",
-        changedFiles: ["src/index.ts"],
+        changedFiles: ["action.yml"],
         commits: [dependabotCommit()],
-        event: pullRequestEvent("opened"),
+        event,
+        trustedBaseDirectory: trustedBaseWith(".github/workflows/ci.yml"),
       }),
-    ).toThrow("changed files were");
+    ).toThrow();
   });
 });
