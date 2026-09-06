@@ -31,10 +31,15 @@ function pullRequestEvent(headRef: string, action = "reopened") {
   };
 }
 
-function dependabotCommit(sha = headSha, verified = true) {
+function dependabotCommit(
+  sha = headSha,
+  verified = true,
+  committer: string | null = "web-flow",
+) {
   return {
     author: { login: "dependabot[bot]" },
     commit: { verification: { verified } },
+    committer: committer ? { login: committer } : undefined,
     parents: [],
     sha,
   };
@@ -131,6 +136,19 @@ describe("Dependabot auto-merge authorization", () => {
         commits: updateChain(),
       }),
     ).toBe("npm");
+  });
+
+  it("requires a web-flow committer on direct and update roots", () => {
+    for (const committer of [null, "maintainer"]) {
+      expect(() =>
+        authorize({ commits: [dependabotCommit(headSha, true, committer)] }),
+      ).toThrow();
+      const commits = updateChain();
+      commits[0] = dependabotCommit(dependabotSha, true, committer);
+      expect(() =>
+        authorize({ ancestryProofs: updateChainProofs(), commits }),
+      ).toThrow();
+    }
   });
 
   it("rejects a reopened chain containing a non-web-flow merge", () => {

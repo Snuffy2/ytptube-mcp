@@ -121,10 +121,16 @@ function requiresDependabotAuthorization(
 }
 
 function assertsAuthoritativeDataflow(job: Job) {
-  const run = authorizationStep(job).run!.toString();
+  const authorization = authorizationStep(job);
+  const environment = authorization.env as Record<string, string>;
+  const run = authorization.run!.toString();
+  expect(environment?.BASE_SHA).toBe(
+    "${{ github.event.pull_request.base.sha }}",
+  );
   expect(run).toMatch(/pulls.*files/);
   expect(run).toMatch(/pulls.*commits/);
   expect(run).toContain("compare/");
+  expect(run).toContain("BASE_SHA");
   expect(run).toContain("dependabot-auto-merge.mjs");
 }
 
